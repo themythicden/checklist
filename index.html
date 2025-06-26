@@ -1,120 +1,118 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Journey Together Set Checklist</title>
   <style>
     body {
-      font-family: sans-serif;
+      font-family: Arial, sans-serif;
       max-width: 800px;
       margin: 2rem auto;
       padding: 1rem;
-      background-color: #f9f9f9;
     }
     h1 {
       text-align: center;
+      margin-bottom: 2rem;
     }
-    .card {
-      background: white;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      border-radius: 8px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    .card-entry {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      padding: 0.5rem;
+      border-bottom: 1px solid #ccc;
     }
-    .info {
-      flex-grow: 1;
+    .card-info {
+      flex: 1;
     }
     .checkboxes {
       display: flex;
       gap: 1rem;
       align-items: center;
     }
-    .saving-indicator {
-      text-align: center;
+    .saving {
       color: green;
-      font-weight: bold;
-      display: none;
-      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      margin-left: 0.5rem;
     }
   </style>
 </head>
 <body>
   <h1>Journey Together Set Checklist</h1>
-  <div id="saving" class="saving-indicator">Saving...</div>
   <div id="checklist"></div>
-
   <script>
-    const checklistEl = document.getElementById("checklist");
-    const savingEl = document.getElementById("saving");
+    const checklistContainer = document.getElementById('checklist');
+    const fetchUrl = '/.netlify/functions/fetch-checklist';
+    const saveUrl = '/.netlify/functions/save-checklist';
 
     async function fetchChecklist() {
       try {
-        const res = await fetch("/.netlify/functions/fetch-checklist");
+        const res = await fetch(fetchUrl);
         const data = await res.json();
         renderChecklist(data);
-      } catch (err) {
-        checklistEl.innerText = "Failed to load checklist.";
+      } catch (error) {
+        checklistContainer.innerHTML = '<p>Failed to load checklist.</p>';
+        console.error("Error loading checklist:", error);
       }
     }
 
     function renderChecklist(cards) {
-      checklistEl.innerHTML = "";
-      cards.forEach((card, i) => {
-        const div = document.createElement("div");
-        div.className = "card";
+      checklistContainer.innerHTML = '';
+      cards.forEach(card => {
+        const entry = document.createElement('div');
+        entry.className = 'card-entry';
 
-        div.innerHTML = `
-          <div class="info">
-            <strong>${card.name}</strong><br>
-            <small>#${card.number} - ${card.rarity}</small>
-          </div>
-          <div class="checkboxes">
-            <label>
-              <input type="checkbox" ${card.standard ? "checked" : ""} data-index="${i}" data-type="standard"> Standard
-            </label>
-            <label>
-              <input type="checkbox" ${card.reverseHolo ? "checked" : ""} data-index="${i}" data-type="reverseHolo"> Reverse Holo
-            </label>
-          </div>
-        `;
+        const info = document.createElement('div');
+        info.className = 'card-info';
+        info.textContent = `${card.number || '?'} - ${card.name} (${card.rarity || 'unknown'})`;
 
-        checklistEl.appendChild(div);
-      });
+        const checkboxWrapper = document.createElement('div');
+        checkboxWrapper.className = 'checkboxes';
 
-      document.querySelectorAll("input[type=checkbox]").forEach(cb => {
-        cb.addEventListener("change", handleChange);
+        const standardBox = document.createElement('input');
+        standardBox.type = 'checkbox';
+        standardBox.checked = card.standard;
+        standardBox.title = 'Standard';
+
+        const reverseBox = document.createElement('input');
+        reverseBox.type = 'checkbox';
+        reverseBox.checked = card.reverseHolo;
+        reverseBox.title = 'Reverse Holo';
+
+        const savingIndicator = document.createElement('span');
+        savingIndicator.className = 'saving';
+        savingIndicator.style.display = 'none';
+        savingIndicator.textContent = 'Saving...';
+
+        function handleChange() {
+          savingIndicator.style.display = 'inline';
+          saveCheckboxChange({
+            name: card.name,
+            standard: standardBox.checked,
+            reverseHolo: reverseBox.checked,
+            number: card.number,
+            rarity: card.rarity
+          }).then(() => {
+            savingIndicator.textContent = 'Saved';
+            setTimeout(() => savingIndicator.style.display = 'none', 1000);
+          });
+        }
+
+        standardBox.addEventListener('change', handleChange);
+        reverseBox.addEventListener('change', handleChange);
+
+        checkboxWrapper.append(standardBox, reverseBox, savingIndicator);
+        entry.append(info, checkboxWrapper);
+        checklistContainer.appendChild(entry);
       });
     }
 
-    let saveTimeout;
-    async function handleChange(e) {
-      const index = e.target.dataset.index;
-      const type = e.target.dataset.type;
-      const cardDiv = e.target.closest(".card");
-
-      const name = cardDiv.querySelector("strong").innerText;
-      const number = cardDiv.querySelector("small").innerText.split(" ")[0].substring(1);
-      const rarity = cardDiv.querySelector("small").innerText.split(" - ")[1];
-
-      const standard = cardDiv.querySelector("input[data-type='standard']").checked;
-      const reverseHolo = cardDiv.querySelector("input[data-type='reverseHolo']").checked;
-
-      savingEl.style.display = "block";
-      clearTimeout(saveTimeout);
-
-      await fetch("/.netlify/functions/save-checklist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, number, rarity, standard, reverseHolo })
+    async function saveCheckboxChange(cardData) {
+      await fetch(saveUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cardData)
       });
-
-      saveTimeout = setTimeout(() => {
-        savingEl.style.display = "none";
-      }, 1500);
     }
 
     fetchChecklist();
