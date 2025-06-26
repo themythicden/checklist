@@ -2,49 +2,134 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Journey Together Checklist</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .saving-indicator {
+      transition: opacity 0.3s ease;
+    }
+  </style>
 </head>
-<body class="bg-gray-100 text-gray-800 p-4">
-  <h1 class="text-2xl font-bold mb-4 text-center">Journey Together Set Checklist</h1>
-  <div id="card-container" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+<body class="bg-gray-100 text-gray-800">
+  <div class="max-w-4xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">Journey Together Set Checklist</h1>
+
+    <div class="flex items-center gap-4 mb-4">
+      <label for="sort" class="font-semibold">Sort by:</label>
+      <select id="sort" class="border p-1 rounded">
+        <option value="number">Card Number (asc)</option>
+        <option value="name">Name (A-Z)</option>
+        <option value="rarity">Rarity</option>
+      </select>
+      <span id="savingIndicator" class="saving-indicator text-sm text-blue-600 hidden">Saving...</span>
+    </div>
+
+    <div id="checklist" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+  </div>
 
   <script>
-    const container = document.getElementById("card-container");
+    const API_URL = '/.netlify/functions/fetch-checklist';
+    const SAVE_URL = '/.netlify/functions/save-checklist';
+    const checklistContainer = document.getElementById('checklist');
+    const savingIndicator = document.getElementById('savingIndicator');
 
-    // Replace this with your actual App Script URL
-    const appScriptURL = "https://script.google.com/macros/s/AKfycbzGyOrVGm3WRC34j34QKA2cjJA1upq9drnnOtXhRXedyT5SqFTjMMm-OgUNecfJd5YhRA/exec";
+    let cardData = [];
 
-    async function fetchJourneyTogetherCards() {
-      const response = await fetch("https://api.pokemontcg.io/v2/cards?q=set.name:\"Journey Together\"", {
-        headers: {
-          "X-Api-Key": "b2c1c990-395b-4ff2-a6d3-c5c458aa6e31"
-        }
-      });
-      const { data: cards } = await response.json();
+    async function fetchChecklist() {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      cardData = data;
+      renderChecklist(data);
+    }
 
+    function renderChecklist(cards) {
+      checklistContainer.innerHTML = '';
       cards.forEach(card => {
-        const { name, number, rarity, images } = card;
+        const cardId = encodeURIComponent(card.name);
+        const saved = JSON.parse(localStorage.getItem(cardId)) || {};
 
-        const cardDiv = document.createElement("div");
-        cardDiv.className = "bg-white rounded shadow p-4 flex flex-col items-center";
+        const div = document.createElement('div');
+        div.className = 'bg-white rounded-xl shadow p-4 flex gap-4 items-start';
 
-        cardDiv.innerHTML = `
-          <img src="${images.small}" alt="${name}" class="w-32 h-auto mb-2"/>
-          <div class="text-center font-medium">${name}</div>
-          <div class="text-sm text-gray-600">#${number} | ${rarity || "Unknown"}</div>
-          <div class="flex gap-4 mt-2">
-            <label><input type="checkbox" data-name="${name}" data-type="standard" class="mr-1">Standard</label>
-            <label><input type="checkbox" data-name="${name}" data-type="reverseHolo" class="mr-1">Reverse Holo</label>
+        const img = document.createElement('img');
+        img.src = `https://images.pokemontcg.io/scarlet-violet/journey-together/${card.number}.png`;
+        img.alt = card.name;
+        img.className = 'w-24 h-auto rounded';
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <h2 class="text-lg font-bold mb-1">${card.name}</h2>
+          <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
+          <div class="mt-2 flex gap-4 items-center">
+            <label class="flex items-center gap-1">
+              <input type="checkbox" ${saved.standard || card.standard ? 'checked' : ''} data-name="${card.name}" data-type="standard"> Standard
+            </label>
+            <label class="flex items-center gap-1">
+              <input type="checkbox" ${saved.reverseHolo || card.reverseHolo ? 'checked' : ''} data-name="${card.name}" data-type="reverseHolo"> Reverse Holo
+            </label>
           </div>
         `;
 
-        container.appendChild(cardDiv);
+        div.appendChild(img);
+        div.appendChild(content);
+        checklistContainer.appendChild(div);
+      });
+
+      document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', handleCheckboxChange);
       });
     }
 
-    fetchJourneyTogetherCards();
+    function showSaving(show) {
+      savingIndicator.classList.toggle('hidden', !show);
+    }
+
+    async function handleCheckboxChange(e) {
+      const checkbox = e.target;
+      const name = checkbox.dataset.name;
+      const type = checkbox.dataset.type;
+      const card = cardData.find(c => c.name === name);
+
+      const updated = {
+        name: card.name,
+        number: card.number,
+        rarity: card.rarity,
+        standard: type === 'standard' ? checkbox.checked : document.querySelector(`input[data-name="${name}"][data-type="standard"]`).checked,
+        reverseHolo: type === 'reverseHolo' ? checkbox.checked : document.querySelector(`input[data-name="${name}"][data-type="reverseHolo"]`).checked
+      };
+
+      localStorage.setItem(name, JSON.stringify(updated));
+      showSaving(true);
+
+      try {
+        await fetch(SAVE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated)
+        });
+        showSaving(false);
+      } catch (err) {
+        alert('Failed to save to Google Sheets.');
+        console.error(err);
+        showSaving(false);
+      }
+    }
+
+    document.getElementById('sort').addEventListener('change', e => {
+      const sortBy = e.target.value;
+      const sorted = [...cardData];
+      if (sortBy === 'number') {
+        sorted.sort((a, b) => parseInt(a.number) - parseInt(b.number));
+      } else if (sortBy === 'name') {
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+      } else if (sortBy === 'rarity') {
+        sorted.sort((a, b) => a.rarity.localeCompare(b.rarity));
+      }
+      renderChecklist(sorted);
+    });
+
+    fetchChecklist();
   </script>
 </body>
 </html>
