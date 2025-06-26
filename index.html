@@ -1,51 +1,116 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Journey Together Set Checklist</title>
-<style>
-  body { font-family: Arial, sans-serif; padding: 20px; }
-  label { margin-right: 10px; }
-  .card { margin-bottom: 12px; }
-</style>
+  <meta charset="UTF-8">
+  <title>Journey Together Set Checklist</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #f5f7fa;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .card-row {
+      display: grid;
+      grid-template-columns: 150px 80px 100px 120px 160px 100px;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      padding: 10px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 0 5px #ccc;
+    }
+    .save-indicator {
+      font-size: 0.9em;
+      color: green;
+      display: none;
+    }
+  </style>
 </head>
 <body>
-<h1>Journey Together Set Checklist</h1>
-<div id="checklist"></div>
+  <h1>Journey Together Set Checklist</h1>
+  <div id="checklist"></div>
 
-<script>
-  async function fetchChecklist() {
-    try {
-      // Call your Netlify function URL here
-      const response = await fetch("/.netlify/functions/fetch-checklist");
-      const data = await response.json();
+  <script>
+    const API_URL = ".netlify/functions/fetch-checklist";
+    const POST_URL = ".netlify/functions/save-checklist";
+
+    async function fetchChecklist() {
+      try {
+        const res = await fetch(API_URL);
+        const cards = await res.json();
+        displayChecklist(cards);
+      } catch (error) {
+        console.error("Error loading checklist:", error);
+      }
+    }
+
+    function displayChecklist(cards) {
       const container = document.getElementById("checklist");
+      container.innerHTML = "";
 
-      data.forEach(card => {
-        const cardDiv = document.createElement("div");
-        cardDiv.className = "card";
+      cards.forEach(card => {
+        const cardRow = document.createElement("div");
+        cardRow.className = "card-row";
 
-        cardDiv.innerHTML = `
-          <strong>${card.name}</strong><br />
-          <label>
-            <input type="checkbox" />
-            Standard
-          </label>
-          <label>
-            <input type="checkbox" />
-            Reverse Holo
-          </label>
+        cardRow.innerHTML = `
+          <span class="card-name">${card.name}</span>
+          <span class="card-number">${card.number || ""}</span>
+          <span class="card-rarity">${card.rarity || ""}</span>
+          <label><input type="checkbox" ${card.standard ? "checked" : ""} data-type="standard" data-name="${card.name}"> Standard</label>
+          <label><input type="checkbox" ${card.reverseHolo ? "checked" : ""} data-type="reverseHolo" data-name="${card.name}"> Reverse Holo</label>
+          <span class="save-indicator" id="save-${card.name.replace(/\s/g, '')}">✔️</span>
         `;
 
-        container.appendChild(cardDiv);
+        container.appendChild(cardRow);
       });
-    } catch (err) {
-      console.error("Error loading checklist:", err);
-      document.getElementById("checklist").textContent = "Failed to load checklist.";
-    }
-  }
 
-  fetchChecklist();
-</script>
+      attachCheckboxListeners();
+    }
+
+    function attachCheckboxListeners() {
+      document.querySelectorAll("input[type='checkbox']").forEach(input => {
+        input.addEventListener("change", async (e) => {
+          const name = e.target.dataset.name;
+          const type = e.target.dataset.type;
+          const standard = document.querySelector(`input[data-name='${name}'][data-type='standard']`).checked;
+          const reverseHolo = document.querySelector(`input[data-name='${name}'][data-type='reverseHolo']`).checked;
+          showSaving(name);
+          await saveCard(name, standard, reverseHolo);
+          showSaved(name);
+        });
+      });
+    }
+
+    async function saveCard(name, standard, reverseHolo) {
+      try {
+        await fetch(POST_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, standard, reverseHolo })
+        });
+      } catch (err) {
+        console.error("Save error:", err);
+      }
+    }
+
+    function showSaving(name) {
+      const el = document.getElementById(`save-${name.replace(/\s/g, '')}`);
+      el.textContent = "💾 Saving...";
+      el.style.display = "inline";
+    }
+
+    function showSaved(name) {
+      const el = document.getElementById(`save-${name.replace(/\s/g, '')}`);
+      el.textContent = "✔️ Saved";
+      setTimeout(() => el.style.display = "none", 1500);
+    }
+
+    fetchChecklist();
+  </script>
 </body>
 </html>
