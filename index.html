@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Journey Together Set Checklist</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; }
+  label { margin-right: 10px; }
+  .card { margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<h1>Journey Together Set Checklist</h1>
+<div id="checklist"></div>
+
+<script>
+  async function fetchChecklist() {
+    try {
+      // Call your Netlify function URL here
+      const response = await fetch("/.netlify/functions/fetch-checklist");
+      const data = await response.json();
+      const container = document.getElementById("checklist");
+
+      data.forEach(card => {
+        const cardDiv = document.createElement("div");
+        cardDiv.className = "card";
+
+        cardDiv.innerHTML = `
+          <strong>${card.name}</strong><br />
+          <label>
+            <input type="checkbox" />
+            Standard
+          </label>
+          <label>
+            <input type="checkbox" />
+            Reverse Holo
+          </label>
+        `;
+
+        container.appendChild(cardDiv);
+      });
+    } catch (err) {
+      console.error("Error loading checklist:", err);
+      document.getElementById("checklist").textContent = "Failed to load checklist.";
+    }
+  }
+
+  fetchChecklist();
+</script>
+</body>
+</html>
