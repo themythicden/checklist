@@ -66,7 +66,7 @@
 
         // Checkboxes
         let reverseCheckbox = '';
-        if (card.reverseHolo !== null && card.reverseHolo !== false && card.hasReverseHolo !== true) {
+        if (card.hasReverseHolo !== true) {
           reverseCheckbox = `
             <label class="flex items-center gap-1">
               <input type="checkbox" ${saved.reverseHolo || card.reverseHolo ? 'checked' : ''} data-name="${card.name}" data-type="reverseHolo"> Reverse Holo
