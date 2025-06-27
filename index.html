@@ -9,35 +9,42 @@
     .saving-indicator {
       transition: opacity 0.3s ease;
     }
+    .sticky-header {
+      position: sticky;
+      top: 0;
+      background: white;
+      z-index: 10;
+      padding: 1rem 0;
+    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
   <div class="max-w-4xl mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-4">Journey Together Set Checklist</h1>
-
-    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-4">
-      <div class="flex items-center gap-2">
+    <div class="sticky-header">
+      <h1 class="text-2xl font-bold mb-2">Journey Together Set Checklist</h1>
+      <div class="flex flex-wrap items-center gap-4 mb-4">
         <label for="sort" class="font-semibold">Sort by:</label>
         <select id="sort" class="border p-1 rounded">
           <option value="number">Card Number (asc)</option>
           <option value="name">Name (A-Z)</option>
           <option value="rarity">Rarity</option>
         </select>
-      </div>
 
-      <div class="flex items-center gap-2">
-        <label for="hideCompleted" class="font-semibold">Hide Completed</label>
-        <input type="checkbox" id="hideCompleted" />
-      </div>
+        <label class="flex items-center gap-2">
+          <input type="checkbox" id="hideCompleted" />
+          Hide completed cards
+        </label>
 
-      <div class="relative">
-        <button id="rarityFilterBtn" class="border px-3 py-1 rounded bg-white shadow">Filter by Rarity</button>
-        <div id="rarityDropdown" class="absolute bg-white border rounded shadow mt-1 p-2 hidden z-10">
-          <!-- checkboxes added dynamically -->
+        <div class="flex gap-2 items-center">
+          <label><input type="radio" name="setMode" value="base" checked /> Base Set</label>
+          <label><input type="radio" name="setMode" value="parallel" /> Parallel Set</label>
+          <label><input type="radio" name="setMode" value="master" /> Master Set</label>
         </div>
-      </div>
 
-      <span id="savingIndicator" class="saving-indicator text-sm text-blue-600 hidden">Saving...</span>
+        <div id="progress" class="text-sm font-semibold text-green-600 ml-auto"></div>
+
+        <span id="savingIndicator" class="saving-indicator text-sm text-blue-600 hidden">Saving...</span>
+      </div>
     </div>
 
     <div id="checklist" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
@@ -48,9 +55,13 @@
     const SAVE_URL = '/.netlify/functions/save-checklist';
     const checklistContainer = document.getElementById('checklist');
     const savingIndicator = document.getElementById('savingIndicator');
-    const rarityDropdown = document.getElementById('rarityDropdown');
-    const rarityFilterBtn = document.getElementById('rarityFilterBtn');
-    const selectedRarities = new Set();
+    const progress = document.getElementById('progress');
+
+    const CARD_TOTALS = {
+      base: 159,
+      master: 190,
+      parallel: 159,
+    };
 
     let cardData = [];
 
@@ -58,50 +69,39 @@
       const res = await fetch(API_URL);
       const data = await res.json();
       cardData = data;
-      buildRarityFilter(data);
       renderChecklist(data);
     }
 
-    function buildRarityFilter(cards) {
-      const rarities = Array.from(new Set(cards.map(c => c.rarity))).sort();
-      rarityDropdown.innerHTML = '';
-      rarities.forEach(rarity => {
-        const id = `rarity-${rarity.replace(/\s+/g, '-')}`;
-        const wrapper = document.createElement('div');
-        wrapper.className = 'flex items-center gap-1';
-        wrapper.innerHTML = `
-          <input type="checkbox" id="${id}" data-rarity="${rarity}">
-          <label for="${id}">${rarity}</label>
-        `;
-        rarityDropdown.appendChild(wrapper);
-        wrapper.querySelector('input').addEventListener('change', () => {
-          const checked = wrapper.querySelector('input').checked;
-          if (checked) selectedRarities.add(rarity);
-          else selectedRarities.delete(rarity);
-          renderChecklist(cardData);
-        });
-      });
-    }
-
-    rarityFilterBtn.addEventListener('click', () => {
-      rarityDropdown.classList.toggle('hidden');
-    });
-
     function renderChecklist(cards) {
-      checklistContainer.innerHTML = '';
       const hideCompleted = document.getElementById('hideCompleted').checked;
+      const mode = document.querySelector('input[name="setMode"]:checked').value;
+      checklistContainer.innerHTML = '';
 
-      cards.forEach(card => {
+      let collected = 0;
+      const filteredCards = cards.filter(card => {
         const saved = JSON.parse(localStorage.getItem(card.name)) || {};
-        const isStandard = saved.standard || card.standard;
-        const isReverse = saved.reverseHolo || card.reverseHolo;
+        const standard = saved.standard ?? card.standard;
+        const reverseHolo = saved.reverseHolo ?? card.reverseHolo;
 
-        if (hideCompleted && isStandard && (card.hasReverseHolo ? isReverse : true)) {
-          return; // skip completed card
+        if (hideCompleted && standard && (card.hasReverseHolo ? reverseHolo : true)) {
+          return false;
         }
 
-        if (selectedRarities.size > 0 && !selectedRarities.has(card.rarity)) {
-          return; // skip if not in selected rarities
+        if (mode === 'base') return true;
+        if (mode === 'parallel') return card.hasReverseHolo;
+        if (mode === 'master') return true;
+        return true;
+      });
+
+      filteredCards.forEach(card => {
+        const saved = JSON.parse(localStorage.getItem(card.name)) || {};
+        const standard = saved.standard ?? card.standard;
+        const reverseHolo = saved.reverseHolo ?? card.reverseHolo;
+
+        if ((mode === 'base' && standard) ||
+            (mode === 'parallel' && (standard || reverseHolo)) ||
+            (mode === 'master' && (standard || reverseHolo))) {
+          collected++;
         }
 
         const div = document.createElement('div');
@@ -112,22 +112,22 @@
         img.alt = card.name;
         img.className = 'w-24 h-auto rounded';
 
-        const content = document.createElement('div');
         let reverseCheckbox = '';
         if (card.hasReverseHolo === true) {
           reverseCheckbox = `
             <label class="flex items-center gap-1">
-              <input type="checkbox" ${isReverse ? 'checked' : ''} data-name="${card.name}" data-type="reverseHolo"> Reverse Holo
+              <input type="checkbox" ${reverseHolo ? 'checked' : ''} data-name="${card.name}" data-type="reverseHolo"> Reverse Holo
             </label>
           `;
         }
 
+        const content = document.createElement('div');
         content.innerHTML = `
           <h2 class="text-lg font-bold mb-1">${card.name}</h2>
           <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
           <div class="mt-2 flex gap-4 items-center">
             <label class="flex items-center gap-1">
-              <input type="checkbox" ${isStandard ? 'checked' : ''} data-name="${card.name}" data-type="standard"> Standard
+              <input type="checkbox" ${standard ? 'checked' : ''} data-name="${card.name}" data-type="standard"> Standard
             </label>
             ${reverseCheckbox}
           </div>
@@ -137,6 +137,8 @@
         div.appendChild(content);
         checklistContainer.appendChild(div);
       });
+
+      progress.textContent = `${collected} / ${CARD_TOTALS[mode]} collected`;
 
       document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         cb.addEventListener('change', handleCheckboxChange);
@@ -157,6 +159,7 @@
         name: card.name,
         number: card.number,
         rarity: card.rarity,
+        hasReverseHolo: card.hasReverseHolo,
         standard: type === 'standard' ? checkbox.checked : document.querySelector(`input[data-name="${name}"][data-type="standard"]`)?.checked || false,
         reverseHolo: type === 'reverseHolo' ? checkbox.checked : document.querySelector(`input[data-name="${name}"][data-type="reverseHolo"]`)?.checked || false
       };
@@ -175,7 +178,7 @@
         console.error(err);
       } finally {
         showSaving(false);
-        renderChecklist(cardData);
+        renderChecklist(cardData); // update filtered view
       }
     }
 
@@ -192,9 +195,8 @@
       renderChecklist(sorted);
     });
 
-    document.getElementById('hideCompleted').addEventListener('change', () => {
-      renderChecklist(cardData);
-    });
+    document.getElementById('hideCompleted').addEventListener('change', () => renderChecklist(cardData));
+    document.querySelectorAll('input[name="setMode"]').forEach(rb => rb.addEventListener('change', () => renderChecklist(cardData)));
 
     fetchChecklist();
   </script>
