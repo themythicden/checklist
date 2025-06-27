@@ -37,10 +37,15 @@
     let cardData = [];
 
     async function fetchChecklist() {
-      const res = await fetch(API_URL);
-      const data = await res.json();
-      cardData = data;
-      renderChecklist(data);
+      try {
+        const res = await fetch(API_URL);
+        const data = await res.json();
+        cardData = data;
+        renderChecklist(data);
+      } catch (err) {
+        console.error('Failed to load checklist:', err);
+        checklistContainer.innerHTML = "<p class='text-red-600'>Failed to load checklist.</p>";
+      }
     }
 
     function renderChecklist(cards) {
@@ -58,6 +63,17 @@
         img.className = 'w-24 h-auto rounded';
 
         const content = document.createElement('div');
+
+        // Checkboxes
+        let reverseCheckbox = '';
+        if (card.reverseHolo !== null && card.reverseHolo !== false) {
+          reverseCheckbox = `
+            <label class="flex items-center gap-1">
+              <input type="checkbox" ${saved.reverseHolo || card.reverseHolo ? 'checked' : ''} data-name="${card.name}" data-type="reverseHolo"> Reverse Holo
+            </label>
+          `;
+        }
+
         content.innerHTML = `
           <h2 class="text-lg font-bold mb-1">${card.name}</h2>
           <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
@@ -65,9 +81,7 @@
             <label class="flex items-center gap-1">
               <input type="checkbox" ${saved.standard || card.standard ? 'checked' : ''} data-name="${card.name}" data-type="standard"> Standard
             </label>
-            <label class="flex items-center gap-1">
-              <input type="checkbox" ${saved.reverseHolo || card.reverseHolo ? 'checked' : ''} data-name="${card.name}" data-type="reverseHolo"> Reverse Holo
-            </label>
+            ${reverseCheckbox}
           </div>
         `;
 
@@ -95,8 +109,8 @@
         name: card.name,
         number: card.number,
         rarity: card.rarity,
-        standard: type === 'standard' ? checkbox.checked : document.querySelector(`input[data-name="${name}"][data-type="standard"]`).checked,
-        reverseHolo: type === 'reverseHolo' ? checkbox.checked : document.querySelector(`input[data-name="${name}"][data-type="reverseHolo"]`).checked
+        standard: type === 'standard' ? checkbox.checked : document.querySelector(`input[data-name="${name}"][data-type="standard"]`)?.checked || false,
+        reverseHolo: type === 'reverseHolo' ? checkbox.checked : document.querySelector(`input[data-name="${name}"][data-type="reverseHolo"]`)?.checked || false
       };
 
       localStorage.setItem(name, JSON.stringify(updated));
@@ -108,10 +122,10 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updated)
         });
-        showSaving(false);
       } catch (err) {
         alert('Failed to save to Google Sheets.');
         console.error(err);
+      } finally {
         showSaving(false);
       }
     }
@@ -120,11 +134,11 @@
       const sortBy = e.target.value;
       const sorted = [...cardData];
       if (sortBy === 'number') {
-        sorted.sort((a, b) => parseInt(a.number) - parseInt(b.number));
+        sorted.sort((a, b) => (a.number || '').localeCompare(b.number || '', undefined, { numeric: true }));
       } else if (sortBy === 'name') {
         sorted.sort((a, b) => a.name.localeCompare(b.name));
       } else if (sortBy === 'rarity') {
-        sorted.sort((a, b) => a.rarity.localeCompare(b.rarity));
+        sorted.sort((a, b) => (a.rarity || '').localeCompare(b.rarity || ''));
       }
       renderChecklist(sorted);
     });
