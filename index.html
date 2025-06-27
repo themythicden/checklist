@@ -15,17 +15,28 @@
   <div class="max-w-4xl mx-auto p-4">
     <h1 class="text-2xl font-bold mb-4">Journey Together Set Checklist</h1>
 
-    <div class="flex items-center gap-4 mb-4">
-      <label for="sort" class="font-semibold">Sort by:</label>
-      <label class="flex items-center gap-2">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-4">
+      <div class="flex items-center gap-2">
+        <label for="sort" class="font-semibold">Sort by:</label>
+        <select id="sort" class="border p-1 rounded">
+          <option value="number">Card Number (asc)</option>
+          <option value="name">Name (A-Z)</option>
+          <option value="rarity">Rarity</option>
+        </select>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <label for="hideCompleted" class="font-semibold">Hide Completed</label>
         <input type="checkbox" id="hideCompleted" />
-        Hide completed cards
-      </label>
-      <select id="sort" class="border p-1 rounded">
-        <option value="number">Card Number (asc)</option>
-        <option value="name">Name (A-Z)</option>
-        <option value="rarity">Rarity</option>
-      </select>
+      </div>
+
+      <div class="relative">
+        <button id="rarityFilterBtn" class="border px-3 py-1 rounded bg-white shadow">Filter by Rarity</button>
+        <div id="rarityDropdown" class="absolute bg-white border rounded shadow mt-1 p-2 hidden z-10">
+          <!-- checkboxes added dynamically -->
+        </div>
+      </div>
+
       <span id="savingIndicator" class="saving-indicator text-sm text-blue-600 hidden">Saving...</span>
     </div>
 
@@ -37,78 +48,100 @@
     const SAVE_URL = '/.netlify/functions/save-checklist';
     const checklistContainer = document.getElementById('checklist');
     const savingIndicator = document.getElementById('savingIndicator');
+    const rarityDropdown = document.getElementById('rarityDropdown');
+    const rarityFilterBtn = document.getElementById('rarityFilterBtn');
+    const selectedRarities = new Set();
 
     let cardData = [];
 
     async function fetchChecklist() {
-      try {
-        const res = await fetch(API_URL);
-        const data = await res.json();
-        cardData = data;
-        renderChecklist(data);
-      } catch (err) {
-        console.error('Failed to load checklist:', err);
-        checklistContainer.innerHTML = "<p class='text-red-600'>Failed to load checklist.</p>";
-      }
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      cardData = data;
+      buildRarityFilter(data);
+      renderChecklist(data);
     }
 
-function renderChecklist(cards, hideCompleted = false) {
-  checklistContainer.innerHTML = '';
-
-  cards.forEach(card => {
-    const cardId = encodeURIComponent(card.name);
-    const saved = JSON.parse(localStorage.getItem(cardId)) || {};
-
-    const isStandardChecked = saved.standard || card.standard;
-    const isReverseChecked = saved.reverseHolo || card.reverseHolo;
-
-    const hasReverse = card.hasReverseHolo !== false;
-
-    const isCompleted = isStandardChecked && (!hasReverse || isReverseChecked);
-
-    if (hideCompleted && isCompleted) {
-      return; // Skip rendering this card
+    function buildRarityFilter(cards) {
+      const rarities = Array.from(new Set(cards.map(c => c.rarity))).sort();
+      rarityDropdown.innerHTML = '';
+      rarities.forEach(rarity => {
+        const id = `rarity-${rarity.replace(/\s+/g, '-')}`;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'flex items-center gap-1';
+        wrapper.innerHTML = `
+          <input type="checkbox" id="${id}" data-rarity="${rarity}">
+          <label for="${id}">${rarity}</label>
+        `;
+        rarityDropdown.appendChild(wrapper);
+        wrapper.querySelector('input').addEventListener('change', () => {
+          const checked = wrapper.querySelector('input').checked;
+          if (checked) selectedRarities.add(rarity);
+          else selectedRarities.delete(rarity);
+          renderChecklist(cardData);
+        });
+      });
     }
 
-    let reverseCheckbox = '';
-    if (hasReverse) {
-      reverseCheckbox = `
-        <label class="flex items-center gap-1">
-          <input type="checkbox" ${isReverseChecked ? 'checked' : ''} data-name="${card.name}" data-type="reverseHolo"> Reverse Holo
-        </label>
-      `;
+    rarityFilterBtn.addEventListener('click', () => {
+      rarityDropdown.classList.toggle('hidden');
+    });
+
+    function renderChecklist(cards) {
+      checklistContainer.innerHTML = '';
+      const hideCompleted = document.getElementById('hideCompleted').checked;
+
+      cards.forEach(card => {
+        const saved = JSON.parse(localStorage.getItem(card.name)) || {};
+        const isStandard = saved.standard || card.standard;
+        const isReverse = saved.reverseHolo || card.reverseHolo;
+
+        if (hideCompleted && isStandard && (card.hasReverseHolo ? isReverse : true)) {
+          return; // skip completed card
+        }
+
+        if (selectedRarities.size > 0 && !selectedRarities.has(card.rarity)) {
+          return; // skip if not in selected rarities
+        }
+
+        const div = document.createElement('div');
+        div.className = 'bg-white rounded-xl shadow p-4 flex gap-4 items-start';
+
+        const img = document.createElement('img');
+        img.src = `https://images.pokemontcg.io/sv9/${card.number}.png`;
+        img.alt = card.name;
+        img.className = 'w-24 h-auto rounded';
+
+        const content = document.createElement('div');
+        let reverseCheckbox = '';
+        if (card.hasReverseHolo === true) {
+          reverseCheckbox = `
+            <label class="flex items-center gap-1">
+              <input type="checkbox" ${isReverse ? 'checked' : ''} data-name="${card.name}" data-type="reverseHolo"> Reverse Holo
+            </label>
+          `;
+        }
+
+        content.innerHTML = `
+          <h2 class="text-lg font-bold mb-1">${card.name}</h2>
+          <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
+          <div class="mt-2 flex gap-4 items-center">
+            <label class="flex items-center gap-1">
+              <input type="checkbox" ${isStandard ? 'checked' : ''} data-name="${card.name}" data-type="standard"> Standard
+            </label>
+            ${reverseCheckbox}
+          </div>
+        `;
+
+        div.appendChild(img);
+        div.appendChild(content);
+        checklistContainer.appendChild(div);
+      });
+
+      document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', handleCheckboxChange);
+      });
     }
-
-    const div = document.createElement('div');
-    div.className = 'bg-white rounded-xl shadow p-4 flex gap-4 items-start';
-
-    const img = document.createElement('img');
-    img.src = `https://images.pokemontcg.io/sv9/${card.number}.png`;
-    img.alt = card.name;
-    img.className = 'w-24 h-auto rounded';
-
-    const content = document.createElement('div');
-    content.innerHTML = `
-      <h2 class="text-lg font-bold mb-1">${card.name}</h2>
-      <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
-      <div class="mt-2 flex gap-4 items-center">
-        <label class="flex items-center gap-1">
-          <input type="checkbox" ${isStandardChecked ? 'checked' : ''} data-name="${card.name}" data-type="standard"> Standard
-        </label>
-        ${reverseCheckbox}
-      </div>
-    `;
-
-    div.appendChild(img);
-    div.appendChild(content);
-    checklistContainer.appendChild(div);
-  });
-
-  document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-    cb.addEventListener('change', handleCheckboxChange);
-  });
-}
-
 
     function showSaving(show) {
       savingIndicator.classList.toggle('hidden', !show);
@@ -142,30 +175,25 @@ function renderChecklist(cards, hideCompleted = false) {
         console.error(err);
       } finally {
         showSaving(false);
-        
-        // ✅ Refresh list with hide filter applied
-        const hideCompleted = document.getElementById('hideCompleted')?.checked;
-        renderChecklist(cardData, hideCompleted);
+        renderChecklist(cardData);
       }
     }
-
 
     document.getElementById('sort').addEventListener('change', e => {
       const sortBy = e.target.value;
       const sorted = [...cardData];
       if (sortBy === 'number') {
-        sorted.sort((a, b) => (a.number || '').localeCompare(b.number || '', undefined, { numeric: true }));
+        sorted.sort((a, b) => parseInt(a.number) - parseInt(b.number));
       } else if (sortBy === 'name') {
         sorted.sort((a, b) => a.name.localeCompare(b.name));
       } else if (sortBy === 'rarity') {
-        sorted.sort((a, b) => (a.rarity || '').localeCompare(b.rarity || ''));
+        sorted.sort((a, b) => a.rarity.localeCompare(b.rarity));
       }
       renderChecklist(sorted);
     });
 
     document.getElementById('hideCompleted').addEventListener('change', () => {
-      const hide = document.getElementById('hideCompleted').checked;
-      renderChecklist(cardData, hide);
+      renderChecklist(cardData);
     });
 
     fetchChecklist();
