@@ -148,11 +148,19 @@ async function fetchChecklist(set = currentSet) {
         const saved = JSON.parse(localStorage.getItem(card.name)) || {};
         const standard = saved.standard ?? card.standard;
         const reverseHolo = saved.reverseHolo ?? card.reverseHolo;
+        const SET_CODES = {
+          JourneyTogether: 'sv9',
+          TemporalForces: 'sv6',
+          ObsidianFlames: 'sv3'
+        };
 
         const inMasterSet = parseInt(card.number) <= masterCount;
         if (!inMasterSet) return;
 
         let countThis = false;
+        if ((selectedMode === 'base' || selectedMode === 'parallel') && parseInt(card.number) > baseCount) {
+          return false;
+        }
         if (selectedMode === 'base' && standard) countThis = true;
         if (selectedMode === 'parallel' && (standard || reverseHolo)) countThis = true;
         if (selectedMode === 'master' && (standard || reverseHolo)) countThis = true;
@@ -162,7 +170,7 @@ async function fetchChecklist(set = currentSet) {
         div.className = 'bg-white p-4 rounded-xl shadow flex gap-4';
 
         const img = document.createElement('img');
-        img.src = `https://images.pokemontcg.io/sv9/${card.number}.png`;
+        img.src = `https://images.pokemontcg.io/${SET_CODES[currentSet]}/${card.number}.png`;
         img.alt = card.name;
         img.className = 'w-24 h-auto';
 
@@ -219,7 +227,7 @@ async function fetchChecklist(set = currentSet) {
       showSaving(true);
 
       try {
-        await fetch('/.netlify/functions/save-checklist', {
+        await fetch(`/.netlify/functions/save-checklist?set=${currentSet}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updated)
