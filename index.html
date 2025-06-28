@@ -73,20 +73,14 @@
     const sortDropdown = document.getElementById('sort');
     const hideCompletedCheckbox = document.getElementById('hideCompleted');
     const rarityFiltersContainer = document.getElementById('rarityFilters');
+
     let allCards = [];
-    let currentSet = setSelector.value;
+    let currentSet = localStorage.getItem('selectedSet') || setSelector.value;
+    setSelector.value = currentSet;
     let selectedMode = 'base';
 
-    function getSheetURL(setName) {
-      return `/.netlify/functions/fetch-checklist?sheet=${encodeURIComponent(setName)}`;
-    }
-
-    async function fetchChecklist() {
-      const res = await fetch(getSheetURL(currentSet));
-      const data = await res.json();
-      allCards = data;
-      buildRarityFilters(data);
-      renderChecklist();
+    function getApiUrl(set) {
+      return `/.netlify/functions/fetch-checklist?set=${set}`;
     }
 
     function buildRarityFilters(cards) {
@@ -111,18 +105,12 @@
 
       return allCards.filter(card => {
         const saved = JSON.parse(localStorage.getItem(card.name)) || {};
-        const standard = saved.standard || card.standard;
-        const reverseHolo = saved.reverseHolo || card.reverseHolo;
+        const standard = saved.standard ?? card.standard;
+        const reverseHolo = saved.reverseHolo ?? card.reverseHolo;
 
-        // Base Set Filter Logic
-        if (selectedMode === 'base') {
-          if (parseInt(card.number) > baseCount) return false;
-        }
-
-        // Hide completed
+        if (selectedMode === 'base' && parseInt(card.number) > baseCount) return false;
         if (hideCompleted && standard && (card.hasReverseHolo ? reverseHolo : true)) return false;
 
-        // Rarity Filter
         return selectedRarities.includes(card.rarity);
       });
     }
@@ -131,7 +119,6 @@
       const cards = getFilteredCards();
       const sorted = [...cards];
       const sortBy = sortDropdown.value;
-
       if (sortBy === 'number') sorted.sort((a, b) => parseInt(a.number) - parseInt(b.number));
       if (sortBy === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
       if (sortBy === 'rarity') sorted.sort((a, b) => a.rarity.localeCompare(b.rarity));
@@ -152,8 +139,7 @@
         let countThis = false;
         if (selectedMode === 'base' && standard) countThis = true;
         if (selectedMode === 'parallel' && (standard || reverseHolo)) countThis = true;
-        if (selectedMode === 'master' && standard) countThis = true;
-        if (selectedMode === 'master' && reverseHolo) countThis = true;
+        if (selectedMode === 'master' && (standard || reverseHolo)) countThis = true;
         if (countThis) collected++;
 
         const div = document.createElement('div');
@@ -189,6 +175,7 @@
 
       const totalCount = selectedMode === 'base' ? baseCount : selectedMode === 'parallel' ? baseCount * 2 : masterCount * 2;
       progressText.textContent = `${collected} / ${totalCount}`;
+
       document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         cb.addEventListener('change', handleCheckboxChange);
       });
@@ -199,6 +186,7 @@
       const name = cb.dataset.name;
       const type = cb.dataset.type;
       const card = allCards.find(c => c.name === name);
+
       const standard = type === 'standard' ? cb.checked : document.querySelector(`input[data-name="${name}"][data-type="standard"]`)?.checked || false;
       const reverseHolo = type === 'reverseHolo' ? cb.checked : document.querySelector(`input[data-name="${name}"][data-type="reverseHolo"]`)?.checked || false;
 
@@ -213,6 +201,7 @@
 
       localStorage.setItem(name, JSON.stringify(updated));
       showSaving(true);
+
       try {
         await fetch('/.netlify/functions/save-checklist', {
           method: 'POST',
@@ -230,6 +219,7 @@
     // Events
     setSelector.addEventListener('change', () => {
       currentSet = setSelector.value;
+      localStorage.setItem('selectedSet', currentSet);
       fetchChecklist();
     });
 
@@ -244,7 +234,7 @@
     rarityFiltersContainer.addEventListener('change', renderChecklist);
 
     // Start
-    fetchChecklist();
+    fetchChecklist(currentSet);
   </script>
 </body>
 </html>
