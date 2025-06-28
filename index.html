@@ -80,8 +80,24 @@
     let selectedMode = 'base';
 
     function getApiUrl(set) {
-      return `/.netlify/functions/fetch-checklist?set=${set}`;
-    }
+  return `/.netlify/functions/fetch-checklist?set=${set}`;
+}
+
+async function fetchChecklist(set = currentSet) {
+  currentSet = set;
+  localStorage.setItem('selectedSet', set);
+
+  try {
+    const res = await fetch(getApiUrl(set));
+    const data = await res.json();
+    allCards = data;
+    buildRarityFilters(data);
+    renderChecklist();
+  } catch (err) {
+    console.error('Failed to fetch checklist:', err);
+  }
+}
+
 
     function buildRarityFilters(cards) {
       const rarities = [...new Set(cards.map(c => c.rarity).filter(Boolean))].sort();
