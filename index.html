@@ -216,25 +216,27 @@
       }
     }
 
-    // Events
-    setSelector.addEventListener('change', () => {
-      currentSet = setSelector.value;
-      localStorage.setItem('selectedSet', currentSet);
-      fetchChecklist();
-    });
+    // Event listeners
+setSelector.addEventListener('change', () => {
+  currentSet = setSelector.value;
+  fetchChecklist(currentSet);
+});
 
-    sortDropdown.addEventListener('change', renderChecklist);
-    hideCompletedCheckbox.addEventListener('change', renderChecklist);
-    document.querySelectorAll('input[name="mode"]').forEach(rb =>
-      rb.addEventListener('change', (e) => {
-        selectedMode = e.target.value;
-        renderChecklist();
-      })
-    );
-    rarityFiltersContainer.addEventListener('change', renderChecklist);
+sortDropdown.addEventListener('change', renderChecklist);
+hideCompletedCheckbox.addEventListener('change', renderChecklist);
 
-    // Start
-    fetchChecklist(currentSet);
+document.querySelectorAll('input[name="mode"]').forEach(rb =>
+  rb.addEventListener('change', (e) => {
+    selectedMode = e.target.value;
+    renderChecklist();
+  })
+);
+
+rarityFiltersContainer.addEventListener('change', renderChecklist);
+
+// ✅ Kickoff - fetch initial checklist
+fetchChecklist(currentSet);
+
   </script>
 </body>
 </html>
