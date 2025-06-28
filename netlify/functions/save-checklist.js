@@ -5,7 +5,7 @@ exports.handler = async function (event) {
     const data = JSON.parse(event.body);
 
     const sheet = data.set || 'JourneyTogether'; // fallback if no set provided
-    const url = `https://script.google.com/macros/s/YOUR_DEPLOYED_APPSCRIPT_URL/exec?sheet=${encodeURIComponent(sheet)}`;
+    const url = `https://script.google.com/macros/s/AKfycbzGyOrVGm3WRC34j34QKA2cjJA1upq9drnnOtXhRXedyT5SqFTjMMm-OgUNecfJd5YhRA/exec?sheet=${encodeURIComponent(sheet)}`;
 
     const response = await fetch(url, {
       method: 'POST',
