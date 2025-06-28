@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Pokémon Card Checklist</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .dropdown-content {
+      display: none;
+    }
+    .dropdown:hover .dropdown-content {
+      display: block;
+    }
+  </style>
 </head>
 <body class="bg-gray-100 text-gray-900">
   <div class="sticky top-0 z-10 bg-white shadow p-4 space-y-2">
@@ -26,10 +34,10 @@
       <label><input type="radio" name="mode" value="parallel"> Parallel Set</label>
       <label><input type="radio" name="mode" value="master"> Master Set</label>
 
-      <!-- Rarity Filter -->
-      <div>
-        <label class="font-semibold">Rarity:</label>
-        <div id="rarityFilters" class="flex flex-wrap gap-2 text-sm"></div>
+      <!-- Rarity Filter Dropdown -->
+      <div class="relative dropdown">
+        <button class="border px-3 py-1 rounded bg-white shadow">Rarity ▼</button>
+        <div id="rarityFilters" class="dropdown-content absolute bg-white shadow rounded p-2 z-20 w-40 max-h-60 overflow-y-auto mt-1"></div>
       </div>
 
       <!-- Sorting -->
@@ -42,13 +50,14 @@
         </select>
       </label>
 
-      <label><input type="checkbox" id="hideCompleted"> Hide Completed</label>
+      <label><input type="checkbox" id="hideCompleted"> Hide Collected</label>
 
       <!-- Progress -->
       <span id="progressText" class="text-sm font-medium text-blue-600 ml-auto"></span>
 
-      <!-- Saving Indicator -->
+      <!-- Saving / Loading Indicator -->
       <span id="savingIndicator" class="text-sm text-blue-500 hidden">Saving...</span>
+      <span id="loadingIndicator" class="text-sm text-gray-500 hidden">Loading...</span>
     </div>
   </div>
 
@@ -68,6 +77,7 @@
 
     const checklistContainer = document.getElementById('checklist');
     const savingIndicator = document.getElementById('savingIndicator');
+    const loadingIndicator = document.getElementById('loadingIndicator');
     const progressText = document.getElementById('progressText');
     const setSelector = document.getElementById('setSelector');
     const sortDropdown = document.getElementById('sort');
@@ -80,24 +90,8 @@
     let selectedMode = 'base';
 
     function getApiUrl(set) {
-  return `/.netlify/functions/fetch-checklist?set=${set}`;
-}
-
-async function fetchChecklist(set = currentSet) {
-  currentSet = set;
-  localStorage.setItem('selectedSet', set);
-
-  try {
-    const res = await fetch(getApiUrl(set));
-    const data = await res.json();
-    allCards = data;
-    buildRarityFilters(data);
-    renderChecklist();
-  } catch (err) {
-    console.error('Failed to fetch checklist:', err);
-  }
-}
-
+      return `/.netlify/functions/fetch-checklist?set=${set}`;
+    }
 
     function buildRarityFilters(cards) {
       const rarities = [...new Set(cards.map(c => c.rarity).filter(Boolean))].sort();
@@ -105,13 +99,19 @@ async function fetchChecklist(set = currentSet) {
       rarities.forEach(r => {
         const id = `rarity-${r.replace(/\s/g, '')}`;
         rarityFiltersContainer.innerHTML += `
-          <label><input type="checkbox" id="${id}" value="${r}" checked> ${r}</label>
+          <label class="block text-sm">
+            <input type="checkbox" id="${id}" value="${r}" checked class="mr-1"> ${r}
+          </label>
         `;
       });
     }
 
     function showSaving(show) {
       savingIndicator.classList.toggle('hidden', !show);
+    }
+
+    function showLoading(show) {
+      loadingIndicator.classList.toggle('hidden', !show);
     }
 
     function getFilteredCards() {
@@ -126,7 +126,6 @@ async function fetchChecklist(set = currentSet) {
 
         if (selectedMode === 'base' && parseInt(card.number) > baseCount) return false;
         if (hideCompleted && standard && (card.hasReverseHolo ? reverseHolo : true)) return false;
-
         return selectedRarities.includes(card.rarity);
       });
     }
@@ -144,33 +143,31 @@ async function fetchChecklist(set = currentSet) {
       const baseCount = BASE_COUNTS[currentSet];
       const masterCount = MASTER_COUNTS[currentSet];
 
+      allCards.forEach(card => {
+        const saved = JSON.parse(localStorage.getItem(card.name)) || {};
+        const standard = saved.standard ?? card.standard;
+        const reverseHolo = saved.reverseHolo ?? card.reverseHolo;
+
+        if (parseInt(card.number) > masterCount) return;
+
+        if (selectedMode === 'base' && standard) collected++;
+        if (selectedMode === 'parallel' && (standard || reverseHolo)) collected++;
+        if (selectedMode === 'master') collected += (standard ? 1 : 0) + (reverseHolo ? 1 : 0);
+      });
+
+      const totalCount = selectedMode === 'base' ? baseCount : selectedMode === 'parallel' ? baseCount * 2 : masterCount * 2;
+      progressText.textContent = `${collected} / ${totalCount}`;
+
       sorted.forEach(card => {
         const saved = JSON.parse(localStorage.getItem(card.name)) || {};
         const standard = saved.standard ?? card.standard;
         const reverseHolo = saved.reverseHolo ?? card.reverseHolo;
-        const SET_CODES = {
-          JourneyTogether: 'sv9',
-          TemporalForces: 'sv5',
-          ObsidianFlames: 'sv3'
-        };
-
-        const inMasterSet = parseInt(card.number) <= masterCount;
-        if (!inMasterSet) return;
-
-        let countThis = false;
-        if ((selectedMode === 'base' || selectedMode === 'parallel') && parseInt(card.number) > baseCount) {
-          return false;
-        }
-        if (selectedMode === 'base' && standard) countThis = true;
-        if (selectedMode === 'parallel' && (standard || reverseHolo)) countThis = true;
-        if (selectedMode === 'master' && (standard || reverseHolo)) countThis = true;
-        if (countThis) collected++;
 
         const div = document.createElement('div');
         div.className = 'bg-white p-4 rounded-xl shadow flex gap-4';
 
         const img = document.createElement('img');
-        img.src = `https://images.pokemontcg.io/${SET_CODES[currentSet]}/${card.number}.png`;
+        img.src = `https://images.pokemontcg.io/sv9/${card.number}.png`;
         img.alt = card.name;
         img.className = 'w-24 h-auto';
 
@@ -196,9 +193,6 @@ async function fetchChecklist(set = currentSet) {
         div.appendChild(content);
         checklistContainer.appendChild(div);
       });
-
-      const totalCount = selectedMode === 'base' ? baseCount : selectedMode === 'parallel' ? baseCount * 2 : masterCount * 2;
-      progressText.textContent = `${collected} / ${totalCount}`;
 
       document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         cb.addEventListener('change', handleCheckboxChange);
@@ -227,7 +221,7 @@ async function fetchChecklist(set = currentSet) {
       showSaving(true);
 
       try {
-        await fetch(`/.netlify/functions/save-checklist?set=${currentSet}`, {
+        await fetch('/.netlify/functions/save-checklist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updated)
@@ -240,27 +234,40 @@ async function fetchChecklist(set = currentSet) {
       }
     }
 
-    // Event listeners
-setSelector.addEventListener('change', () => {
-  currentSet = setSelector.value;
-  fetchChecklist(currentSet);
-});
+    async function fetchChecklist(set = currentSet) {
+      showLoading(true);
+      try {
+        const res = await fetch(getApiUrl(set));
+        const data = await res.json();
+        allCards = data;
+        buildRarityFilters(data);
+        renderChecklist();
+        localStorage.setItem('selectedSet', set);
+      } catch (err) {
+        console.error("Failed to fetch checklist:", err);
+      } finally {
+        showLoading(false);
+      }
+    }
 
-sortDropdown.addEventListener('change', renderChecklist);
-hideCompletedCheckbox.addEventListener('change', renderChecklist);
+    // Event Listeners
+    setSelector.addEventListener('change', () => {
+      currentSet = setSelector.value;
+      fetchChecklist(currentSet);
+    });
 
-document.querySelectorAll('input[name="mode"]').forEach(rb =>
-  rb.addEventListener('change', (e) => {
-    selectedMode = e.target.value;
-    renderChecklist();
-  })
-);
+    sortDropdown.addEventListener('change', renderChecklist);
+    hideCompletedCheckbox.addEventListener('change', renderChecklist);
+    rarityFiltersContainer.addEventListener('change', renderChecklist);
+    document.querySelectorAll('input[name="mode"]').forEach(rb =>
+      rb.addEventListener('change', (e) => {
+        selectedMode = e.target.value;
+        renderChecklist();
+      })
+    );
 
-rarityFiltersContainer.addEventListener('change', renderChecklist);
-
-// ✅ Kickoff - fetch initial checklist
-fetchChecklist(currentSet);
-
+    // Initial Load
+    fetchChecklist(currentSet);
   </script>
 </body>
 </html>
