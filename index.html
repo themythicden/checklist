@@ -1,25 +1,16 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pokémon Card Checklist</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    #rarityDropdown:hover #rarityMenu {
-      display: block;
-    }
-    #rarityMenu {
-      display: none;
-    }
-  </style>
 </head>
 <body class="bg-gray-100 text-gray-900">
   <div class="sticky top-0 z-10 bg-white shadow p-4 space-y-2">
     <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <img id="setLogo" class="h-12" alt="Set Logo">
-      </div>
+      <img id="setLogo" class="h-12" alt="Set Logo">
       <span id="progressText" class="text-sm font-medium text-blue-600"></span>
     </div>
 
@@ -38,15 +29,7 @@
       <label><input type="radio" name="mode" value="parallel"> Parallel Set</label>
       <label><input type="radio" name="mode" value="master"> Master Set</label>
 
-      <div id="rarityDropdown" class="relative">
-        <button class="border px-2 py-1 rounded">Filter Rarity ⌄</button>
-        <div id="rarityMenu" class="absolute mt-1 bg-white border rounded shadow p-2 z-50 max-h-48 overflow-y-auto">
-          <div id="rarityFilters" class="flex flex-col gap-1 text-sm"></div>
-        </div>
-      </div>
-
-      <label>
-        Sort by:
+      <label>Sort:
         <select id="sort" class="border p-1 rounded">
           <option value="number">Card Number</option>
           <option value="name">Name</option>
@@ -63,22 +46,13 @@
   <div id="checklist" class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4"></div>
 
   <script>
-    const BASE_COUNTS = {
-      JourneyTogether: 159,
-      TemporalForces: 162,
-      ObsidianFlames: 197,
-      PrismaticEvolutions: 165
-    };
-    const MASTER_COUNTS = {
-      JourneyTogether: 190,
-      TemporalForces: 218,
-      ObsidianFlames: 230,
-      PrismaticEvolutions: 200
-    };
+    const BASE_COUNTS = { JourneyTogether: 159, TemporalForces: 162, ObsidianFlames: 197, PrismaticEvolutions: 165 };
+    const MASTER_COUNTS = { JourneyTogether: 190, TemporalForces: 218, ObsidianFlames: 230, PrismaticEvolutions: 200 };
+    const SET_CODES = { JourneyTogether: 'sv9', TemporalForces: 'sv5', ObsidianFlames: 'sv3pt5', PrismaticEvolutions: 'sv8pt5' };
     const SET_LOGOS = {
       JourneyTogether: 'https://images.pokemontcg.io/sv9/logo.png',
       TemporalForces: 'https://images.pokemontcg.io/sv5/logo.png',
-      ObsidianFlames: 'https://images.pokemontcg.io/sv3/logo.png',
+      ObsidianFlames: 'https://images.pokemontcg.io/sv3pt5/logo.png',
       PrismaticEvolutions: 'https://images.pokemontcg.io/sv8pt5/logo.png'
     };
 
@@ -89,35 +63,146 @@
     const setSelector = document.getElementById('setSelector');
     const sortDropdown = document.getElementById('sort');
     const hideCompletedCheckbox = document.getElementById('hideCompleted');
-    const rarityFiltersContainer = document.getElementById('rarityFilters');
     const setLogo = document.getElementById('setLogo');
 
-    let allCards = [];
-    let selectedMode = 'base';
-    let currentSet = localStorage.getItem('selectedSet') || setSelector.value;
-
-    function getSetCode(setName) {
-      return {
-        JourneyTogether: 'sv9',
-        TemporalForces: 'sv5',
-        ObsidianFlames: 'sv3',
-        PrismaticEvolutions: 'sv8pt5'
-      }[setName] || 'sv9';
-    }
+    let allCards = [], selectedMode = 'base', currentSet = setSelector.value;
 
     function getApiUrl(set) {
       return `/.netlify/functions/fetch-checklist?set=${set}`;
     }
 
-    function buildRarityFilters(cards) {
-      const rarities = [...new Set(cards.map(c => c.rarity).filter(Boolean))].sort();
-      rarityFiltersContainer.innerHTML = '';
-      rarities.forEach(r => {
-        const id = `rarity-${r.replace(/\s/g, '')}`;
-        rarityFiltersContainer.innerHTML += `
-          <label><input type="checkbox" id="${id}" value="${r}" checked> ${r}</label>
+    function getVariants(card, set) {
+      const type = (card.type || '').toLowerCase();
+      const rarity = (card.rarity || '').toLowerCase();
+
+      if (type === 'trainer') return ['standard', 'reverseHolo', 'pokeball'];
+      if (rarity === 'ace spec') return ['holo'];
+
+      const base = [];
+      const isCommon = rarity === 'common' || rarity === 'uncommon';
+      const isRare = rarity === 'rare';
+
+      if (isCommon) base.push('standard', 'reverseHolo');
+      else if (isRare) base.push('holo', 'reverseHolo');
+      else base.push('holo');
+
+      if (set === 'PrismaticEvolutions') {
+        if (isCommon || isRare) base.push('pokeball', 'masterball');
+      }
+
+      return base;
+    }
+
+    async function fetchChecklist(set = currentSet) {
+      currentSet = set;
+      setLogo.src = SET_LOGOS[set];
+      showLoading(true);
+      try {
+        const res = await fetch(getApiUrl(set));
+        const data = await res.json();
+        allCards = data.map(card => ({ ...card, setCode: SET_CODES[set] }));
+        renderChecklist();
+      } catch (err) {
+        console.error('Failed to fetch checklist:', err);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function renderChecklist() {
+      const baseCount = BASE_COUNTS[currentSet];
+      const masterCount = MASTER_COUNTS[currentSet];
+      checklistContainer.innerHTML = '';
+      let collected = 0;
+
+      let cards = [...allCards].filter(card => parseInt(card.number) <= masterCount);
+      if (hideCompletedCheckbox.checked) {
+        cards = cards.filter(card => {
+          const saved = JSON.parse(localStorage.getItem(card.name)) || {};
+          const variants = getVariants(card, currentSet);
+          return !variants.every(v => saved[v] || false);
+        });
+      }
+
+      const sort = sortDropdown.value;
+      if (sort === 'name') cards.sort((a, b) => a.name.localeCompare(b.name));
+      else if (sort === 'rarity') cards.sort((a, b) => a.rarity.localeCompare(b.rarity));
+      else cards.sort((a, b) => parseInt(a.number) - parseInt(b.number));
+
+      for (const card of cards) {
+        const saved = JSON.parse(localStorage.getItem(card.name)) || {};
+        const variants = getVariants(card, currentSet);
+        const number = parseInt(card.number);
+        if (selectedMode === 'base' && number > baseCount) continue;
+
+        const collectedVariants = variants.filter(v => saved[v]);
+        if (
+          (selectedMode === 'base' && collectedVariants.includes('standard')) ||
+          (selectedMode === 'parallel' && (saved.standard || saved.reverseHolo || saved.holo)) ||
+          (selectedMode === 'master' && collectedVariants.length > 0)
+        ) collected++;
+
+        const div = document.createElement('div');
+        div.className = 'bg-white p-4 rounded-xl shadow flex gap-4';
+
+        const img = document.createElement('img');
+        img.src = `https://images.pokemontcg.io/${card.setCode}/${card.number}.png`;
+        img.alt = card.name;
+        img.className = 'w-24 h-auto';
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <h2 class="font-bold text-lg">${card.name}</h2>
+          <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
+          <div class="flex flex-wrap gap-2 mt-2">
+            ${variants.map(v => `
+              <label class="flex items-center gap-1">
+                <input type="checkbox" data-name="${card.name}" data-type="${v}" ${saved[v] ? 'checked' : ''}> ${v.replace(/([A-Z])/g, ' $1')}
+              </label>`).join('')}
+          </div>
         `;
-      });
+
+        div.appendChild(img);
+        div.appendChild(content);
+        checklistContainer.appendChild(div);
+      }
+
+      const total = selectedMode === 'base' ? baseCount : masterCount;
+      progressText.textContent = `${collected} / ${total}`;
+
+      document.querySelectorAll('input[type="checkbox"]').forEach(cb =>
+        cb.addEventListener('change', handleCheckboxChange)
+      );
+    }
+
+    async function handleCheckboxChange(e) {
+      const cb = e.target;
+      const name = cb.dataset.name;
+      const type = cb.dataset.type;
+      const card = allCards.find(c => c.name === name);
+      const saved = JSON.parse(localStorage.getItem(name)) || {};
+      saved[type] = cb.checked;
+
+      localStorage.setItem(name, JSON.stringify(saved));
+      showSaving(true);
+      try {
+        await fetch('/.netlify/functions/save-checklist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: card.name,
+            number: card.number,
+            rarity: card.rarity,
+            type: card.type,
+            ...saved
+          })
+        });
+      } catch (err) {
+        console.error('Save error:', err);
+      } finally {
+        showSaving(false);
+        renderChecklist();
+      }
     }
 
     function showSaving(show) {
@@ -127,187 +212,12 @@
       loadingIndicator.classList.toggle('hidden', !show);
     }
 
-    async function fetchChecklist(set = currentSet) {
-      currentSet = set;
-      localStorage.setItem('selectedSet', set);
-      setLogo.src = SET_LOGOS[set] || '';
-      showLoading(true);
-      try {
-        const res = await fetch(getApiUrl(set));
-        const data = await res.json();
-        data.forEach(card => card.setCode = getSetCode(set));
-        allCards = data;
-        buildRarityFilters(data);
-        renderChecklist();
-      } catch (err) {
-        console.error('Failed to fetch checklist:', err);
-      } finally {
-        showLoading(false);
-      }
-    }
-
-    function getFilteredCards() {
-      const selectedRarities = Array.from(rarityFiltersContainer.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
-      const hideCompleted = hideCompletedCheckbox.checked;
-      const baseCount = BASE_COUNTS[currentSet];
-
-      return allCards.filter(card => {
-        const saved = JSON.parse(localStorage.getItem(card.name)) || {};
-        const variantKeys = Object.keys(card).filter(k => !['name', 'number', 'rarity', 'hasReverseHolo', 'setCode'].includes(k) && typeof card[k] === 'boolean');
-        const isCompleted = variantKeys.every(k => saved[k] || card[k]);
-
-        if (selectedMode === 'base' && parseInt(card.number) > baseCount) return false;
-        if (hideCompleted && isCompleted) return false;
-        return selectedRarities.includes(card.rarity);
-      });
-    }
-
-    function renderChecklist() {
-  const cards = getFilteredCards();
-  const sorted = [...cards];
-  const sortBy = sortDropdown.value;
-  if (sortBy === 'number') sorted.sort((a, b) => parseInt(a.number) - parseInt(b.number));
-  if (sortBy === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
-  if (sortBy === 'rarity') sorted.sort((a, b) => a.rarity.localeCompare(b.rarity));
-
-  checklistContainer.innerHTML = '';
-  let collected = 0;
-  const baseCount = BASE_COUNTS[currentSet];
-  const masterCount = MASTER_COUNTS[currentSet];
-
-  sorted.forEach(card => {
-    const saved = JSON.parse(localStorage.getItem(card.name)) || {};
-    const number = parseInt(card.number);
-    const inMasterSet = number <= masterCount;
-    if (!inMasterSet) return;
-
-    const rarity = (card.rarity || '').toLowerCase();
-    const showReverse = card.hasReverseHolo && selectedMode !== 'base';
-    const isCommonOrUncommon = rarity === 'common' || rarity === 'uncommon';
-    const isRare = rarity === 'rare';
-    const isOther = !isCommonOrUncommon && !isRare;
-
-    // Determine which variant(s) to show
-    const checkboxOptions = [];
-
-    if (isCommonOrUncommon) {
-      checkboxOptions.push({ label: 'Standard', key: 'standard' });
-      if (showReverse) checkboxOptions.push({ label: 'Reverse Holo', key: 'reverseHolo' });
-    } else if (isRare) {
-      checkboxOptions.push({ label: 'Holo Foil', key: 'holo' });
-      if (showReverse) checkboxOptions.push({ label: 'Reverse Holo', key: 'reverseHolo' });
-    } else {
-      checkboxOptions.push({ label: 'Holo Foil', key: 'holo' }); // For other rarities (Illustration Rare, etc.)
-    }
-
-    // Hide any card with no relevant variant in selected mode
-    if (selectedMode === 'base' && !checkboxOptions.some(opt => opt.key === 'standard' || opt.key === 'holo')) return;
-
-    // Track collection progress
-    const isCollected = checkboxOptions.some(opt => saved[opt.key] || card[opt.key]);
-    if (
-      (selectedMode === 'base' && isCollected && number <= baseCount) ||
-      (selectedMode === 'parallel' && (saved.standard || saved.reverseHolo || saved.holo)) ||
-      (selectedMode === 'master' && isCollected)
-    ) {
-      collected++;
-    }
-
-    // Render card
-    const div = document.createElement('div');
-    div.className = 'bg-white p-4 rounded-xl shadow flex gap-4';
-
-    const img = document.createElement('img');
-    img.src = `https://images.pokemontcg.io/${card.setCode}/${card.number}.png`;
-    img.alt = card.name;
-    img.className = 'w-24 h-auto';
-
-    const content = document.createElement('div');
-    const checkboxes = checkboxOptions.map(({ label, key }) => {
-      const checked = saved[key] ?? card[key];
-      return `
-        <label class="flex items-center gap-1">
-          <input type="checkbox" data-name="${card.name}" data-type="${key}" ${checked ? 'checked' : ''}> ${label}
-        </label>
-      `;
-    }).join('');
-
-    content.innerHTML = `
-      <h2 class="font-bold text-lg">${card.name}</h2>
-      <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
-      <div class="flex flex-wrap gap-4 mt-2">${checkboxes}</div>
-    `;
-
-    div.appendChild(img);
-    div.appendChild(content);
-    checklistContainer.appendChild(div);
-  });
-
-  const totalCount = selectedMode === 'base'
-    ? baseCount
-    : selectedMode === 'parallel'
-    ? baseCount
-    : masterCount;
-
-  progressText.textContent = `${collected} / ${totalCount}`;
-
-  document.querySelectorAll('input[type="checkbox"]').forEach(cb =>
-    cb.addEventListener('change', handleCheckboxChange)
-  );
-}
-
-
-    async function handleCheckboxChange(e) {
-  const cb = e.target;
-  const name = cb.dataset.name;
-  const type = cb.dataset.type;
-  const card = allCards.find(c => c.name === name);
-
-  const localKey = `${currentSet}:${name}`;
-  const saved = JSON.parse(localStorage.getItem(localKey)) || {};
-  saved[type] = cb.checked;
-
-  const updatePayload = {
-    name: card.name,
-    number: card.number,
-    rarity: card.rarity,
-    [type]: cb.checked // Only send the updated field
-  };
-
-  // Optionally: mark other variants as null if they exist but are not used
-  if (type === "holo" && ("standard" in card)) {
-    updatePayload.standard = null; // Do not mark standard=true accidentally
-  }
-
-  localStorage.setItem(localKey, JSON.stringify(saved));
-  showSaving(true);
-
-  try {
-    await fetch('/.netlify/functions/save-checklist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatePayload)
-    });
-  } catch (err) {
-    console.error('Save error:', err);
-    alert('Failed to save to Google Sheets.');
-  } finally {
-    showSaving(false);
-    renderChecklist();
-  }
-}
-
-
     setSelector.addEventListener('change', () => fetchChecklist(setSelector.value));
     sortDropdown.addEventListener('change', renderChecklist);
     hideCompletedCheckbox.addEventListener('change', renderChecklist);
     document.querySelectorAll('input[name="mode"]').forEach(rb =>
-      rb.addEventListener('change', (e) => {
-        selectedMode = e.target.value;
-        renderChecklist();
-      })
+      rb.addEventListener('change', e => { selectedMode = e.target.value; renderChecklist(); })
     );
-    rarityFiltersContainer.addEventListener('change', renderChecklist);
 
     fetchChecklist(currentSet);
   </script>
