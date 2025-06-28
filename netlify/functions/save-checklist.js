@@ -1,30 +1,28 @@
-const fetch = require("node-fetch");
+const SHEET_NAMES = {
+  JourneyTogether: 'JourneyTogether',
+  TemporalForces: 'TemporalForces',
+  ObsidianFlames: 'ObsidianFlames'
+};
 
-exports.handler = async function(event, context) {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
-
-  const data = JSON.parse(event.body);
+exports.handler = async function (event) {
+  const sheetName = SHEET_NAMES[event.queryStringParameters.set] || 'JourneyTogether';
+  const url = `YOUR_APPSCRIPT_URL?sheet=${encodeURIComponent(sheetName)}`;
 
   try {
-    const response = await fetch("https://script.google.com/macros/s/AKfycbzGyOrVGm3WRC34j34QKA2cjJA1upq9drnnOtXhRXedyT5SqFTjMMm-OgUNecfJd5YhRA/exec", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
+    const response = await fetch(url, {
+      method: 'POST',
+      body: event.body,
+      headers: { 'Content-Type': 'application/json' }
     });
-
-    if (!response.ok) throw new Error("Failed to save");
 
     return {
       statusCode: 200,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ message: "Saved successfully" })
+      body: await response.text()
     };
   } catch (error) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: error.message })
+      body: JSON.stringify({ error: 'Failed to save data', details: error.message })
     };
   }
 };
