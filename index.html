@@ -19,28 +19,25 @@
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-4">
         <img id="setLogo" class="h-12" alt="Set Logo">
-        <!--h1 class="text-2xl font-bold">Pokémon Card Checklist</h1-->
       </div>
       <span id="progressText" class="text-sm font-medium text-blue-600"></span>
     </div>
 
     <div class="flex flex-wrap items-center gap-4 mt-2">
-      <!-- Set Selector -->
       <label>
         Set:
         <select id="setSelector" class="border p-1 rounded">
           <option value="JourneyTogether">Journey Together</option>
           <option value="TemporalForces">Temporal Forces</option>
           <option value="ObsidianFlames">Obsidian Flames</option>
+          <option value="PrismaticEvolutions">Prismatic Evolutions</option>
         </select>
       </label>
 
-      <!-- Toggle Base/Parallel/Master -->
       <label><input type="radio" name="mode" value="base" checked> Base Set</label>
       <label><input type="radio" name="mode" value="parallel"> Parallel Set</label>
       <label><input type="radio" name="mode" value="master"> Master Set</label>
 
-      <!-- Rarity Dropdown -->
       <div id="rarityDropdown" class="relative">
         <button class="border px-2 py-1 rounded">Filter Rarity ⌄</button>
         <div id="rarityMenu" class="absolute mt-1 bg-white border rounded shadow p-2 z-50 max-h-48 overflow-y-auto">
@@ -48,7 +45,6 @@
         </div>
       </div>
 
-      <!-- Sorting -->
       <label>
         Sort by:
         <select id="sort" class="border p-1 rounded">
@@ -58,7 +54,6 @@
         </select>
       </label>
 
-      <!-- Options -->
       <label><input type="checkbox" id="hideCompleted"> Hide Collected</label>
       <span id="savingIndicator" class="text-sm text-blue-500 hidden">Saving...</span>
       <span id="loadingIndicator" class="text-sm text-gray-500 hidden">Loading...</span>
@@ -71,17 +66,20 @@
     const BASE_COUNTS = {
       JourneyTogether: 159,
       TemporalForces: 162,
-      ObsidianFlames: 197
+      ObsidianFlames: 197,
+      PrismaticEvolutions: 165
     };
     const MASTER_COUNTS = {
       JourneyTogether: 190,
       TemporalForces: 218,
-      ObsidianFlames: 230
+      ObsidianFlames: 230,
+      PrismaticEvolutions: 200
     };
     const SET_LOGOS = {
       JourneyTogether: 'https://images.pokemontcg.io/sv9/logo.png',
       TemporalForces: 'https://images.pokemontcg.io/sv5/logo.png',
-      ObsidianFlames: 'https://images.pokemontcg.io/sv3pt5/logo.png'
+      ObsidianFlames: 'https://images.pokemontcg.io/sv3pt5/logo.png',
+      PrismaticEvolutions: 'https://images.pokemontcg.io/sv4/logo.png'
     };
 
     const checklistContainer = document.getElementById('checklist');
@@ -97,6 +95,15 @@
     let allCards = [];
     let selectedMode = 'base';
     let currentSet = localStorage.getItem('selectedSet') || setSelector.value;
+
+    function getSetCode(setName) {
+      return {
+        JourneyTogether: 'sv9',
+        TemporalForces: 'sv5',
+        ObsidianFlames: 'sv3pt5',
+        PrismaticEvolutions: 'sv4'
+      }[setName] || 'sv9';
+    }
 
     function getApiUrl(set) {
       return `/.netlify/functions/fetch-checklist?set=${set}`;
@@ -128,6 +135,7 @@
       try {
         const res = await fetch(getApiUrl(set));
         const data = await res.json();
+        data.forEach(card => card.setCode = getSetCode(set));
         allCards = data;
         buildRarityFilters(data);
         renderChecklist();
@@ -145,9 +153,8 @@
 
       return allCards.filter(card => {
         const saved = JSON.parse(localStorage.getItem(card.name)) || {};
-        const isCompleted = Object.keys(card)
-          .filter(k => typeof card[k] === "boolean")
-          .every(v => saved[v] || card[v]);
+        const variantKeys = Object.keys(card).filter(k => !['name', 'number', 'rarity', 'hasReverseHolo', 'setCode'].includes(k) && typeof card[k] === 'boolean');
+        const isCompleted = variantKeys.every(k => saved[k] || card[k]);
 
         if (selectedMode === 'base' && parseInt(card.number) > baseCount) return false;
         if (hideCompleted && isCompleted) return false;
@@ -157,11 +164,13 @@
 
     function renderChecklist() {
       const cards = getFilteredCards();
-      const sorted = [...cards];
       const sortBy = sortDropdown.value;
-      if (sortBy === 'number') sorted.sort((a, b) => parseInt(a.number) - parseInt(b.number));
-      if (sortBy === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
-      if (sortBy === 'rarity') sorted.sort((a, b) => a.rarity.localeCompare(b.rarity));
+      const sorted = [...cards].sort((a, b) => {
+        if (sortBy === 'number') return parseInt(a.number) - parseInt(b.number);
+        if (sortBy === 'name') return a.name.localeCompare(b.name);
+        if (sortBy === 'rarity') return a.rarity.localeCompare(b.rarity);
+        return 0;
+      });
 
       checklistContainer.innerHTML = '';
       let collected = 0;
@@ -171,45 +180,41 @@
       sorted.forEach(card => {
         const saved = JSON.parse(localStorage.getItem(card.name)) || {};
         const number = parseInt(card.number);
+        if (number > masterCount) return;
 
-        const inMasterSet = number <= masterCount;
-        if (!inMasterSet) return;
-
-        const variantKeys = Object.keys(card).filter(k => typeof card[k] === "boolean");
+        const variantKeys = Object.keys(card).filter(k => !['name', 'number', 'rarity', 'hasReverseHolo', 'setCode'].includes(k) && typeof card[k] === 'boolean');
         const checkedCount = variantKeys.filter(k => saved[k] || card[k]).length;
-        if ((selectedMode === 'base' && number > baseCount) ||
-            (selectedMode === 'parallel' && number > baseCount)) return;
 
-        if ((selectedMode === 'base' && saved.standard) ||
-            (selectedMode === 'parallel' && (saved.standard || saved.reverseHolo)) ||
-            (selectedMode === 'master' && checkedCount)) {
-          collected += 1;
-        }
+        let countThis = false;
+        if (selectedMode === 'base' && saved.standard) countThis = true;
+        else if (selectedMode === 'parallel' && (saved.standard || saved.reverseHolo)) countThis = true;
+        else if (selectedMode === 'master' && checkedCount) countThis = true;
+
+        if (countThis) collected++;
+
+        const checkboxGroup = variantKeys.map(variant => {
+          if (selectedMode === 'base' && variant !== 'standard') return '';
+          const checked = saved[variant] ?? card[variant];
+          return `
+            <label class="flex items-center gap-1">
+              <input type="checkbox" data-name="${card.name}" data-type="${variant}" ${checked ? 'checked' : ''}> ${variant.replace(/([A-Z])/g, ' $1')}
+            </label>
+          `;
+        }).join('');
 
         const div = document.createElement('div');
         div.className = 'bg-white p-4 rounded-xl shadow flex gap-4';
 
         const img = document.createElement('img');
-        img.src = `https://images.pokemontcg.io/sv9/${card.number}.png`;
+        img.src = `https://images.pokemontcg.io/${card.setCode}/${card.number}.png`;
         img.alt = card.name;
         img.className = 'w-24 h-auto';
 
         const content = document.createElement('div');
-        const variantCheckboxes = variantKeys.map(k => {
-          if (selectedMode === 'base' && k !== 'standard') return '';
-          return `
-            <label class="flex items-center gap-1">
-              <input type="checkbox" data-name="${card.name}" data-type="${k}" ${saved[k] || card[k] ? 'checked' : ''}> ${k}
-            </label>
-          `;
-        }).join('');
-
         content.innerHTML = `
           <h2 class="font-bold text-lg">${card.name}</h2>
           <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
-          <div class="flex gap-4 mt-2 flex-wrap">
-            ${variantCheckboxes}
-          </div>
+          <div class="flex flex-wrap gap-4 mt-2">${checkboxGroup}</div>
         `;
 
         div.appendChild(img);
@@ -217,12 +222,7 @@
         checklistContainer.appendChild(div);
       });
 
-      const totalCount = selectedMode === 'base'
-        ? baseCount
-        : selectedMode === 'parallel'
-        ? baseCount
-        : masterCount;
-
+      const totalCount = selectedMode === 'base' ? baseCount : selectedMode === 'parallel' ? baseCount : masterCount;
       progressText.textContent = `${collected} / ${totalCount}`;
 
       document.querySelectorAll('input[type="checkbox"]').forEach(cb =>
@@ -264,7 +264,6 @@
       }
     }
 
-    // Event listeners
     setSelector.addEventListener('change', () => fetchChecklist(setSelector.value));
     sortDropdown.addEventListener('change', renderChecklist);
     hideCompletedCheckbox.addEventListener('change', renderChecklist);
