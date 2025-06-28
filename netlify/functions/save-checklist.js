@@ -1,28 +1,32 @@
-const SHEET_NAMES = {
-  JourneyTogether: 'JourneyTogether',
-  TemporalForces: 'TemporalForces',
-  ObsidianFlames: 'ObsidianFlames'
-};
+const fetch = require('node-fetch');
 
 exports.handler = async function (event) {
-  const sheetName = SHEET_NAMES[event.queryStringParameters.set] || 'JourneyTogether';
-  const url = `YOUR_APPSCRIPT_URL?sheet=${encodeURIComponent(sheetName)}`;
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' };
+  }
+
+  const data = JSON.parse(event.body);
+  const set = data.set || 'JourneyTogether';
+
+  const scriptUrl = 'https://script.google.com/macros/s/AKfycbzGyOrVGm3WRC34j34QKA2cjJA1upq9drnnOtXhRXedyT5SqFTjMMm-OgUNecfJd5YhRA/exec';
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(`${scriptUrl}?sheet=${set}`, {
       method: 'POST',
-      body: event.body,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
     });
 
+    const text = await response.text();
     return {
       statusCode: 200,
-      body: await response.text()
+      body: JSON.stringify({ success: true, response: text })
     };
-  } catch (error) {
+  } catch (err) {
+    console.error('Save error:', err);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to save data', details: error.message })
+      body: JSON.stringify({ error: 'Failed to save data' })
     };
   }
 };
