@@ -100,8 +100,8 @@
       return {
         JourneyTogether: 'sv9',
         TemporalForces: 'sv5',
-        ObsidianFlames: 'sv3pt5',
-        PrismaticEvolutions: 'sv4'
+        ObsidianFlames: 'sv3',
+        PrismaticEvolutions: 'sv8pt5'
       }[setName] || 'sv9';
     }
 
@@ -163,72 +163,99 @@
     }
 
     function renderChecklist() {
-      const cards = getFilteredCards();
-      const sortBy = sortDropdown.value;
-      const sorted = [...cards].sort((a, b) => {
-        if (sortBy === 'number') return parseInt(a.number) - parseInt(b.number);
-        if (sortBy === 'name') return a.name.localeCompare(b.name);
-        if (sortBy === 'rarity') return a.rarity.localeCompare(b.rarity);
-        return 0;
-      });
+  const cards = getFilteredCards();
+  const sorted = [...cards];
+  const sortBy = sortDropdown.value;
+  if (sortBy === 'number') sorted.sort((a, b) => parseInt(a.number) - parseInt(b.number));
+  if (sortBy === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
+  if (sortBy === 'rarity') sorted.sort((a, b) => a.rarity.localeCompare(b.rarity));
 
-      checklistContainer.innerHTML = '';
-      let collected = 0;
-      const baseCount = BASE_COUNTS[currentSet];
-      const masterCount = MASTER_COUNTS[currentSet];
+  checklistContainer.innerHTML = '';
+  let collected = 0;
+  const baseCount = BASE_COUNTS[currentSet];
+  const masterCount = MASTER_COUNTS[currentSet];
 
-      sorted.forEach(card => {
-        const saved = JSON.parse(localStorage.getItem(card.name)) || {};
-        const number = parseInt(card.number);
-        if (number > masterCount) return;
+  sorted.forEach(card => {
+    const saved = JSON.parse(localStorage.getItem(card.name)) || {};
+    const number = parseInt(card.number);
+    const inMasterSet = number <= masterCount;
+    if (!inMasterSet) return;
 
-        const variantKeys = Object.keys(card).filter(k => !['name', 'number', 'rarity', 'hasReverseHolo', 'setCode'].includes(k) && typeof card[k] === 'boolean');
-        const checkedCount = variantKeys.filter(k => saved[k] || card[k]).length;
+    const rarity = (card.rarity || '').toLowerCase();
+    const showReverse = card.hasReverseHolo && selectedMode !== 'base';
+    const isCommonOrUncommon = rarity === 'common' || rarity === 'uncommon';
+    const isRare = rarity === 'rare';
+    const isOther = !isCommonOrUncommon && !isRare;
 
-        let countThis = false;
-        if (selectedMode === 'base' && saved.standard) countThis = true;
-        else if (selectedMode === 'parallel' && (saved.standard || saved.reverseHolo)) countThis = true;
-        else if (selectedMode === 'master' && checkedCount) countThis = true;
+    // Determine which variant(s) to show
+    const checkboxOptions = [];
 
-        if (countThis) collected++;
-
-        const checkboxGroup = variantKeys.map(variant => {
-          if (selectedMode === 'base' && variant !== 'standard') return '';
-          const checked = saved[variant] ?? card[variant];
-          return `
-            <label class="flex items-center gap-1">
-              <input type="checkbox" data-name="${card.name}" data-type="${variant}" ${checked ? 'checked' : ''}> ${variant.replace(/([A-Z])/g, ' $1')}
-            </label>
-          `;
-        }).join('');
-
-        const div = document.createElement('div');
-        div.className = 'bg-white p-4 rounded-xl shadow flex gap-4';
-
-        const img = document.createElement('img');
-        img.src = `https://images.pokemontcg.io/${card.setCode}/${card.number}.png`;
-        img.alt = card.name;
-        img.className = 'w-24 h-auto';
-
-        const content = document.createElement('div');
-        content.innerHTML = `
-          <h2 class="font-bold text-lg">${card.name}</h2>
-          <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
-          <div class="flex flex-wrap gap-4 mt-2">${checkboxGroup}</div>
-        `;
-
-        div.appendChild(img);
-        div.appendChild(content);
-        checklistContainer.appendChild(div);
-      });
-
-      const totalCount = selectedMode === 'base' ? baseCount : selectedMode === 'parallel' ? baseCount : masterCount;
-      progressText.textContent = `${collected} / ${totalCount}`;
-
-      document.querySelectorAll('input[type="checkbox"]').forEach(cb =>
-        cb.addEventListener('change', handleCheckboxChange)
-      );
+    if (isCommonOrUncommon) {
+      checkboxOptions.push({ label: 'Standard', key: 'standard' });
+      if (showReverse) checkboxOptions.push({ label: 'Reverse Holo', key: 'reverseHolo' });
+    } else if (isRare) {
+      checkboxOptions.push({ label: 'Holo Foil', key: 'holo' });
+      if (showReverse) checkboxOptions.push({ label: 'Reverse Holo', key: 'reverseHolo' });
+    } else {
+      checkboxOptions.push({ label: 'Holo Foil', key: 'holo' }); // For other rarities (Illustration Rare, etc.)
     }
+
+    // Hide any card with no relevant variant in selected mode
+    if (selectedMode === 'base' && !checkboxOptions.some(opt => opt.key === 'standard' || opt.key === 'holo')) return;
+
+    // Track collection progress
+    const isCollected = checkboxOptions.some(opt => saved[opt.key] || card[opt.key]);
+    if (
+      (selectedMode === 'base' && isCollected && number <= baseCount) ||
+      (selectedMode === 'parallel' && (saved.standard || saved.reverseHolo || saved.holo)) ||
+      (selectedMode === 'master' && isCollected)
+    ) {
+      collected++;
+    }
+
+    // Render card
+    const div = document.createElement('div');
+    div.className = 'bg-white p-4 rounded-xl shadow flex gap-4';
+
+    const img = document.createElement('img');
+    img.src = `https://images.pokemontcg.io/${card.setCode}/${card.number}.png`;
+    img.alt = card.name;
+    img.className = 'w-24 h-auto';
+
+    const content = document.createElement('div');
+    const checkboxes = checkboxOptions.map(({ label, key }) => {
+      const checked = saved[key] ?? card[key];
+      return `
+        <label class="flex items-center gap-1">
+          <input type="checkbox" data-name="${card.name}" data-type="${key}" ${checked ? 'checked' : ''}> ${label}
+        </label>
+      `;
+    }).join('');
+
+    content.innerHTML = `
+      <h2 class="font-bold text-lg">${card.name}</h2>
+      <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
+      <div class="flex flex-wrap gap-4 mt-2">${checkboxes}</div>
+    `;
+
+    div.appendChild(img);
+    div.appendChild(content);
+    checklistContainer.appendChild(div);
+  });
+
+  const totalCount = selectedMode === 'base'
+    ? baseCount
+    : selectedMode === 'parallel'
+    ? baseCount
+    : masterCount;
+
+  progressText.textContent = `${collected} / ${totalCount}`;
+
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb =>
+    cb.addEventListener('change', handleCheckboxChange)
+  );
+}
+
 
     async function handleCheckboxChange(e) {
       const cb = e.target;
