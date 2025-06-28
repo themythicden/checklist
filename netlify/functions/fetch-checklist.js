@@ -7,7 +7,7 @@ const SHEET_NAMES = {
 exports.handler = async function (event) {
   const sheetName = SHEET_NAMES[event.queryStringParameters.set] || 'JourneyTogether';
 
-  const url = `YOUR_APPSCRIPT_URL?sheet=${encodeURIComponent(sheetName)}`;
+  const url = `https://script.google.com/macros/s/AKfycbzGyOrVGm3WRC34j34QKA2cjJA1upq9drnnOtXhRXedyT5SqFTjMMm-OgUNecfJd5YhRA/exec?sheet=${encodeURIComponent(sheetName)}`;
 
   try {
     const response = await fetch(url);
