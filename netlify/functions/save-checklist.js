@@ -1,35 +1,28 @@
-const fetch = require("node-fetch");
+const fetch = require('node-fetch');
 
 exports.handler = async function (event) {
-  if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
-      body: "Method Not Allowed",
-    };
-  }
-
-  const data = JSON.parse(event.body);
-  const set = data.set || "JourneyTogether"; // required to determine correct sheet
-
-  const url = `https://script.google.com/macros/s/AKfycbzGyOrVGm3WRC34j34QKA2cjJA1upq9drnnOtXhRXedyT5SqFTjMMm-OgUNecfJd5YhRA/exec`;
-
   try {
+    const data = JSON.parse(event.body);
+
+    const sheet = data.set || 'JourneyTogether'; // fallback if no set provided
+    const url = `https://script.google.com/macros/s/YOUR_DEPLOYED_APPSCRIPT_URL/exec?sheet=${encodeURIComponent(sheet)}`;
+
     const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, sheet: set }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
     });
 
-    const text = await response.text();
+    const result = await response.text();
     return {
       statusCode: 200,
-      body: text,
+      body: JSON.stringify({ message: result })
     };
   } catch (error) {
-    console.error("Save failed:", error);
+    console.error('Save checklist error:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Failed to save checklist", details: error.message }),
+      body: JSON.stringify({ error: 'Failed to save checklist', details: error.message })
     };
   }
 };
