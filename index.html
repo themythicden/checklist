@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Pokémon Card Checklist</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    #rarityDropdown:hover #rarityMenu { display: block; }
+    #rarityMenu { display: none; }
+  </style>
 </head>
 <body class="bg-gray-100 text-gray-900">
   <div class="sticky top-0 z-10 bg-white shadow p-4 space-y-2">
@@ -25,6 +29,22 @@
       <label><input type="radio" name="mode" value="parallel"> Parallel Set</label>
       <label><input type="radio" name="mode" value="master"> Master Set</label>
 
+      <div id="rarityDropdown" class="relative">
+        <button class="border px-2 py-1 rounded">Filter Rarity ⌄</button>
+        <div id="rarityMenu" class="absolute mt-1 bg-white border rounded shadow p-2 z-50 max-h-48 overflow-y-auto">
+          <div id="rarityFilters" class="flex flex-col gap-1 text-sm"></div>
+        </div>
+      </div>
+
+      <label>
+        Sort by:
+        <select id="sort" class="border p-1 rounded">
+          <option value="number">Card Number</option>
+          <option value="name">Name</option>
+          <option value="rarity">Rarity</option>
+        </select>
+      </label>
+
       <label><input type="checkbox" id="hideCompleted"> Hide Collected</label>
       <span id="savingIndicator" class="text-sm text-blue-500 hidden">Saving...</span>
       <span id="loadingIndicator" class="text-sm text-gray-500 hidden">Loading...</span>
@@ -34,18 +54,20 @@
   <div id="checklist" class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4"></div>
 
   <script>
-    let SET_METADATA = {};
-    let allCards = [];
-    let selectedMode = 'base';
-    let currentSet = '';
-
     const checklistContainer = document.getElementById('checklist');
     const savingIndicator = document.getElementById('savingIndicator');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const progressText = document.getElementById('progressText');
     const setSelector = document.getElementById('setSelector');
-    const setLogo = document.getElementById('setLogo');
+    const sortDropdown = document.getElementById('sort');
     const hideCompletedCheckbox = document.getElementById('hideCompleted');
+    const rarityFiltersContainer = document.getElementById('rarityFilters');
+    const setLogo = document.getElementById('setLogo');
+
+    let allCards = [];
+    let selectedMode = 'base';
+    let currentSet = '';
+    let setMetadata = {};
 
     function showSaving(show) {
       savingIndicator.classList.toggle('hidden', !show);
@@ -55,109 +77,137 @@
     }
 
     async function fetchSetMetadata() {
-      const res = await fetch('/.netlify/functions/fetch-checklist?set=Sets');
+      const res = await fetch('/.netlify/functions/fetch-sets');
       const sets = await res.json();
-      SET_METADATA = {};
-      setSelector.innerHTML = '';
+
       sets.forEach(set => {
-        SET_METADATA[set.setName] = {
-          base: parseInt(set.baseCount),
-          master: parseInt(set.masterCount),
+        const option = document.createElement('option');
+        option.value = set.sheetName;
+        option.textContent = set.name;
+        setSelector.appendChild(option);
+        setMetadata[set.sheetName] = {
           code: set.setCode,
-          logo: set.logoURL
+          logo: set.logo,
+          baseCount: parseInt(set.baseCount),
+          masterCount: parseInt(set.masterCount)
         };
-        const opt = document.createElement('option');
-        opt.value = set.setName;
-        opt.textContent = set.setName.replace(/([a-z])([A-Z])/g, '$1 $2');
-        setSelector.appendChild(opt);
       });
-      currentSet = setSelector.value;
     }
 
-    async function fetchChecklist(setName) {
-      currentSet = setName;
+    async function fetchChecklist(sheetName) {
       showLoading(true);
-      const res = await fetch(`/.netlify/functions/fetch-checklist?set=${setName}`);
-      const data = await res.json();
-      allCards = data.map(c => ({ ...c, setCode: SET_METADATA[setName]?.code }));
-      setLogo.src = SET_METADATA[setName]?.logo || '';
-      renderChecklist();
-      showLoading(false);
+      currentSet = sheetName;
+      const meta = setMetadata[sheetName];
+      setLogo.src = meta.logo || '';
+      try {
+        const res = await fetch(`/.netlify/functions/fetch-checklist?set=${sheetName}`);
+        const data = await res.json();
+        data.forEach(card => card.setCode = meta.code); // ensure image path
+        allCards = data;
+        buildRarityFilters(data);
+        renderChecklist();
+      } catch (err) {
+        console.error(err);
+        checklistContainer.innerHTML = '<p class="text-red-600">Failed to load data.</p>';
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function buildRarityFilters(cards) {
+      const rarities = [...new Set(cards.map(c => c.rarity).filter(Boolean))].sort();
+      rarityFiltersContainer.innerHTML = '';
+      rarities.forEach(r => {
+        rarityFiltersContainer.innerHTML += `
+          <label><input type="checkbox" value="${r}" checked> ${r}</label>
+        `;
+      });
+    }
+
+    function getFilteredCards() {
+      const selectedRarities = Array.from(rarityFiltersContainer.querySelectorAll('input:checked')).map(cb => cb.value);
+      const baseCount = setMetadata[currentSet].baseCount;
+      return allCards.filter(card => {
+        const num = parseInt(card.number);
+        if (selectedMode === 'base' && num > baseCount) return false;
+        if (!selectedRarities.includes(card.rarity)) return false;
+        return true;
+      });
     }
 
     function renderChecklist() {
+      const cards = getFilteredCards();
+      const sortBy = sortDropdown.value;
+      cards.sort((a, b) => {
+        if (sortBy === 'number') return parseInt(a.number) - parseInt(b.number);
+        if (sortBy === 'name') return a.name.localeCompare(b.name);
+        return a.rarity.localeCompare(b.rarity);
+      });
+
       checklistContainer.innerHTML = '';
-      const baseCount = SET_METADATA[currentSet]?.base || 0;
-      const masterCount = SET_METADATA[currentSet]?.master || 0;
       let collected = 0;
 
-      allCards.forEach(card => {
-        const number = parseInt(card.number);
-        if (selectedMode === 'base' && number > baseCount) return;
-        if (selectedMode === 'parallel' && number > baseCount) return;
-        if (selectedMode === 'master' && number > masterCount) return;
-
+      cards.forEach(card => {
         const saved = JSON.parse(localStorage.getItem(card.name)) || {};
-        const isCollected = saved.standard || saved.reverseHolo || saved.holoFoil || saved.pokeball || saved.masterball;
-        if (hideCompletedCheckbox.checked && isCollected) return;
-
-        if (isCollected) collected++;
-
-        const div = document.createElement('div');
-        div.className = 'bg-white p-4 rounded-xl shadow flex gap-4';
-
-        const img = document.createElement('img');
-        img.src = `https://images.pokemontcg.io/${card.setCode}/${card.number}.png`;
-        img.alt = card.name;
-        img.className = 'w-24 h-auto';
-
-        const content = document.createElement('div');
-        const checkboxVariants = [];
-
+        const num = parseInt(card.number);
         const rarity = (card.rarity || '').toLowerCase();
         const type = (card.type || '').toLowerCase();
 
-        if (type === 'trainer') {
-          checkboxVariants.push('standard', 'reverseHolo', 'pokeball');
-        } else if (rarity === 'ace spec') {
-          checkboxVariants.push('holoFoil');
-        } else if (rarity === 'common' || rarity === 'uncommon') {
-          checkboxVariants.push('standard', 'reverseHolo');
-          if (currentSet === 'PrismaticEvolutions') checkboxVariants.push('pokeball', 'masterball');
-        } else if (rarity === 'rare' || rarity === 'double rare') {
-          checkboxVariants.push('holoFoil', 'reverseHolo');
-          if (currentSet === 'PrismaticEvolutions') checkboxVariants.push('pokeball', 'masterball');
+        const isCommonOrUncommon = rarity === 'common' || rarity === 'uncommon';
+        const isRare = rarity === 'rare';
+        const isSpecial = !isCommonOrUncommon && !isRare;
+        const isTrainer = type === 'trainer';
+        const isAceSpec = type.includes('ace spec');
+
+        let options = [];
+        if (isAceSpec || isSpecial) {
+          options.push({ key: 'holoFoil', label: 'Holo Foil' });
+        } else if (isTrainer) {
+          options.push({ key: 'standard', label: 'Standard' });
+          if (selectedMode !== 'base') options.push({ key: 'reverseHolo', label: 'Reverse Holo' }, { key: 'pokeball', label: 'Pokéball' });
+        } else if (isRare) {
+          options.push({ key: 'holoFoil', label: 'Holo Foil' });
+          if (selectedMode !== 'base') options.push({ key: 'reverseHolo', label: 'Reverse Holo' }, { key: 'pokeball', label: 'Pokéball' }, { key: 'masterball', label: 'Master Ball' });
         } else {
-          checkboxVariants.push('holoFoil');
+          options.push({ key: 'standard', label: 'Standard' });
+          if (selectedMode !== 'base') options.push({ key: 'reverseHolo', label: 'Reverse Holo' });
+          if (currentSet === 'PrismaticEvolutions') {
+            options.push({ key: 'pokeball', label: 'Pokéball' }, { key: 'masterball', label: 'Master Ball' });
+          }
         }
 
-        const checkboxes = checkboxVariants.map(variant => {
-          const checked = saved[variant] ?? card[variant];
-          return `<label class="flex items-center gap-1">
-            <input type="checkbox" data-name="${card.name}" data-type="${variant}" ${checked ? 'checked' : ''}> ${variant}
-          </label>`;
-        }).join('');
+        const checkedAny = options.some(opt => saved[opt.key] || card[opt.key]);
+        if (checkedAny) collected++;
 
+        const div = document.createElement('div');
+        div.className = 'bg-white p-4 rounded shadow flex gap-4';
+
+        const img = document.createElement('img');
+        img.src = `https://images.pokemontcg.io/${card.setCode}/${card.number}.png`;
+        img.className = 'w-24';
+
+        const content = document.createElement('div');
         content.innerHTML = `
-          <h2 class="font-bold text-lg">${card.name}</h2>
+          <h2 class="font-bold">${card.name}</h2>
           <p class="text-sm text-gray-500">#${card.number} - ${card.rarity}</p>
-          <div class="flex flex-wrap gap-2 mt-2">${checkboxes}</div>
+          <div class="flex flex-wrap gap-2 mt-2">
+            ${options.map(opt => `
+              <label class="flex gap-1 items-center">
+                <input type="checkbox" data-name="${card.name}" data-type="${opt.key}" ${saved[opt.key] || card[opt.key] ? 'checked' : ''}>
+                ${opt.label}
+              </label>
+            `).join('')}
+          </div>
         `;
-
         div.appendChild(img);
         div.appendChild(content);
         checklistContainer.appendChild(div);
       });
 
-      const total = selectedMode === 'base' ? SET_METADATA[currentSet]?.base
-                   : selectedMode === 'parallel' ? SET_METADATA[currentSet]?.base * 2
-                   : SET_METADATA[currentSet]?.master;
-
+      const total = setMetadata[currentSet]?.[selectedMode === 'master' ? 'masterCount' : 'baseCount'] || cards.length;
       progressText.textContent = `${collected} / ${total}`;
 
-      document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        cb.addEventListener('change', handleCheckboxChange);
-      });
+      document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.addEventListener('change', handleCheckboxChange));
     }
 
     async function handleCheckboxChange(e) {
@@ -165,12 +215,10 @@
       const name = cb.dataset.name;
       const type = cb.dataset.type;
       const card = allCards.find(c => c.name === name);
-
       const saved = JSON.parse(localStorage.getItem(name)) || {};
       saved[type] = cb.checked;
-      localStorage.setItem(name, JSON.stringify(saved));
 
-      const updated = {
+      const payload = {
         name: card.name,
         number: card.number,
         rarity: card.rarity,
@@ -178,31 +226,39 @@
         ...saved
       };
 
+      localStorage.setItem(name, JSON.stringify(saved));
       showSaving(true);
       try {
         await fetch('/.netlify/functions/save-checklist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...updated, sheet: currentSet })
+          body: JSON.stringify({ sheet: currentSet, ...payload })
         });
       } catch (err) {
-        console.error(err);
-        alert('Save failed');
+        alert('Failed to save to Google Sheets.');
       } finally {
         showSaving(false);
         renderChecklist();
       }
     }
 
-    // Init
-    document.querySelectorAll('input[name="mode"]').forEach(rb => rb.addEventListener('change', e => {
-      selectedMode = e.target.value;
-      renderChecklist();
-    }));
+    // Event bindings
     setSelector.addEventListener('change', () => fetchChecklist(setSelector.value));
+    sortDropdown.addEventListener('change', renderChecklist);
     hideCompletedCheckbox.addEventListener('change', renderChecklist);
+    document.querySelectorAll('input[name="mode"]').forEach(rb =>
+      rb.addEventListener('change', e => {
+        selectedMode = e.target.value;
+        renderChecklist();
+      })
+    );
+    rarityFiltersContainer.addEventListener('change', renderChecklist);
 
-    fetchSetMetadata().then(() => fetchChecklist(setSelector.value));
+    // Init
+    fetchSetMetadata().then(() => {
+      const defaultSet = setSelector.value || Object.keys(setMetadata)[0];
+      fetchChecklist(defaultSet);
+    });
   </script>
 </body>
 </html>
